@@ -21,14 +21,14 @@ This project implements a pull-based messaging system where clients send message
 - **Protocol**: Stateless over TCP
 - **Database**: SQLite (defensive.db) for persistent storage
 - **Port Configuration**: Reads from `myport.info` file
-- **Version**: 1.0 (2.0 for bonus features)
+- **Version**: 1.0 (for bonus features)
 
 ### Client (C++)
 - **Language**: C++
 - **Interface**: Console-based application
 - **Encryption**: RSA + AES hybrid encryption
 - **Configuration**: Reads server info from `server.info` and user info from `my.info`
-- **Version**: 2.0 ( for bonus features)
+- **Version**: 2.0 (for bonus features)
 
 ## 📁 Project Structure
 
@@ -234,17 +234,11 @@ This is an academic project. Please ensure:
 
 This project is developed as part of an academic assignment for the Defensive Systems Programming course. All rights reserved.
 
-## 📞 Support
-
-For technical issues or questions related to the assignment, please refer to the course materials or contact the course instructors.
-
 ---
 
 **Assignment Details:**
-- Course: Defensive Systems Programming (20937)
-- Assignment: Guided Assignment 15
+- Course: Defensive Systems Programming
+- Assignment 15
 - Semester: 2025A
-- Submission Deadline: March 20, 2025
-- Weight: 14 points (2+2 bonus)
 
 **Note**: This implementation focuses on educational purposes and demonstrates secure communication protocols, encryption techniques, and network programming concepts.
