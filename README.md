@@ -28,7 +28,7 @@ This project implements a pull-based messaging system where clients send message
 - **Interface**: Console-based application
 - **Encryption**: RSA + AES hybrid encryption
 - **Configuration**: Reads server info from `server.info` and user info from `my.info`
-- **Version**: 1.0 (2.0 for bonus features)
+- **Version**: 2.0 ( for bonus features)
 
 ## 📁 Project Structure
 
