@@ -21,7 +21,7 @@ This project implements a pull-based messaging system where clients send message
 - **Protocol**: Stateless over TCP
 - **Database**: SQLite (defensive.db) for persistent storage
 - **Port Configuration**: Reads from `myport.info` file
-- **Version**: 1.0 (for bonus features)
+- **Version**: 2.0 (for bonus features)
 
 ### Client (C++)
 - **Language**: C++
