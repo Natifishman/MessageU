@@ -1,10 +1,10 @@
 # MessageU - End-to-End Encrypted Messaging System
 
-A secure client-server messaging application implementing end-to-end encryption, similar to WhatsApp or Facebook Messenger, developed as part of Defensive Systems Programming course (20937).
+A secure client-server messaging application implementing end-to-end encryption, similar to WhatsApp or Facebook Messenger, developed as part of the Defensive Systems Programming course (20937).
 
 ## 📋 Overview
 
-This project implements a pull-based messaging system where clients send messages to a server, which then distributes them to target recipients. The system supports end-to-end encryption ensuring that only the intended recipients can read the messages.
+This project implements a pull-based messaging system where clients send messages to a server, which then distributes them to target recipients. The system supports end-to-end encryption, ensuring that only the intended recipients can read the messages.
 
 ### Key Features
 
@@ -92,11 +92,11 @@ cd src/client
 ```
 MessageU client at your service.
 110) Register
-120) Request for clients list
+120) Request for client list
 130) Request for public key
 140) Request for waiting messages
 150) Send a text message
-151) Send a request for symmetric key
+151) Send a request for a symmetric key
 152) Send your symmetric key
 153) Send a file (bonus)
 0) Exit client
@@ -114,7 +114,7 @@ MessageU client at your service.
 ### Security Considerations
 
 - All messages are encrypted before transmission
-- Server cannot decrypt message content
+- The server cannot decrypt the message content
 - Each client pair uses unique symmetric keys
 - Public keys are distributed through the server
 
@@ -124,11 +124,11 @@ MessageU client at your service.
 
 1. **Key Exchange**:
    - Client A requests Client B's public key
-   - Client A sends symmetric key request to Client B (encrypted with B's public key)
-   - Client B responds with symmetric key (encrypted with A's public key)
+   - Client A sends a symmetric key request to Client B (encrypted with B's public key)
+   - Client B responds with a symmetric key (encrypted with A's public key)
 
 2. **Message Exchange**:
-   - Messages are encrypted with shared symmetric key
+   - Messages are encrypted with a shared symmetric key
    - Server stores and forwards encrypted messages
    - Recipients decrypt messages using their symmetric key
 
@@ -225,7 +225,7 @@ MessageU client at your service.
 ## 🤝 Contributing
 
 This is an academic project. Please ensure:
-- No external code sharing or collaboration
+- No external code-sharing or collaboration
 - Use only approved libraries and resources
 - Follow the specified development guidelines
 - Maintain academic integrity standards
@@ -241,4 +241,4 @@ This project is developed as part of an academic assignment for the Defensive Sy
 - Assignment 15
 - Semester: 2025A
 
-**Note**: This implementation focuses on educational purposes and demonstrates secure communication protocols, encryption techniques, and network programming concepts.
+**Note**: This implementation is designed for educational purposes and demonstrates secure communication protocols, encryption techniques, and network programming concepts.
