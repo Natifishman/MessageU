@@ -1,8 +1,12 @@
 /**
- * @author	Natanel Maor Fishman
- * @file	StringUtility.cpp
- * @brief	Implementation of string manipulation utility functions
+ * @file        StringUtility.cpp
+ * @author      Natanel Maor Fishman
+ * @brief       String utility library implementation
+ * @details     String utilities for encoding, decoding,
+ *              and formatting operations with robust error handling
+ * @date        2025
  */
+
 #include "StringUtility.h"
 #include <base64.h>
 #include <boost/algorithm/hex.hpp>
@@ -11,83 +15,125 @@
 #include <iomanip>
 #include <sstream>
 
- // Encodes input string to Base64 format
-std::string StringUtility::encodeBase64(const std::string& input)
+ /**
+  * @brief       Encodes string data to Base64 format
+  * @param[in]   inputData     Input string to encode
+  * @return      Base64 encoded string
+  * @details     Uses CryptoPP's Base64 encoder for efficient and secure encoding.
+  *              Suitable for binary data and text encoding with automatic padding.
+  */
+std::string StringUtility::encodeBase64(const std::string& inputData)
 {
-	std::string encoded;
-	CryptoPP::StringSource ss(input, true, new CryptoPP::Base64Encoder(new CryptoPP::StringSink(encoded)));
-	return encoded;
+	std::string encodedResult;
+
+	// Use CryptoPP's Base64 encoder with automatic padding
+	CryptoPP::StringSource dataSource(inputData, true,
+		new CryptoPP::Base64Encoder(new CryptoPP::StringSink(encodedResult)));
+
+	return encodedResult;
 }
 
-
-// Decodes Base64 string to original format with error handling
-std::string StringUtility::decodeBase64(const std::string& encodedString)
+/**
+ * @brief       Decodes Base64 string to original format with comprehensive error handling
+ * @param[in]   encodedData   Base64 encoded string to decode
+ * @return      Decoded original data as string
+ * @details     Uses CryptoPP's Base64 decoder with robust error handling.
+ *              Returns empty string for invalid Base64 input to prevent crashes.
+ */
+std::string StringUtility::decodeBase64(const std::string& encodedData)
 {
-	std::string decoded;
+	std::string decodedResult;
+
 	try {
-		CryptoPP::StringSource source(encodedString, true,
-			new CryptoPP::Base64Decoder(
-				new CryptoPP::StringSink(decoded)
-			)
-		);
+		// Attempt to decode the Base64 string with error handling
+		CryptoPP::StringSource encodedSource(encodedData, true,
+			new CryptoPP::Base64Decoder(new CryptoPP::StringSink(decodedResult)));
 	}
 	catch (...) {
+		// Return empty string for any decoding errors
 		return "";
 	}
-	return decoded;
+
+	return decodedResult;
 }
 
-
-// Converts byte buffer to hexadecimal string representation
-std::string StringUtility::hex(const uint8_t* buffer, const size_t size)
+/**
+ * @brief       Converts binary data to hexadecimal string representation
+ * @param[in]   binaryData    Pointer to binary data buffer
+ * @param[in]   dataSize      Size of binary data in bytes
+ * @return      Hexadecimal string representation of the binary data
+ * @details     Converts each byte to its two-character hex representation.
+ *              Includes comprehensive input validation and error handling.
+ */
+std::string StringUtility::hex(const uint8_t* binaryData, const size_t dataSize)
 {
-	if (buffer == nullptr || size == 0) {
+	// Validate input parameters
+	if (binaryData == nullptr || dataSize == 0) {
 		return "";
 	}
 
-	const std::string byteString(buffer, buffer + size);
-	if (byteString.empty())
+	// Convert binary data to string for Boost hex processing
+	const std::string binaryString(binaryData, binaryData + dataSize);
+	if (binaryString.empty()) {
 		return "";
-
-	try
-	{
-		return boost::algorithm::hex(byteString);
 	}
-	catch (...)
-	{
+
+	try {
+		// Use Boost's hex algorithm for efficient conversion
+		return boost::algorithm::hex(binaryString);
+	}
+	catch (...) {
+		// Return empty string for any conversion errors
 		return "";
 	}
 }
 
-
-// Converts hexadecimal string to binary representation
+/**
+ * @brief       Converts hexadecimal string to binary data
+ * @param[in]   hexString     Hexadecimal string to convert
+ * @return      Binary data as string
+ * @details     Converts pairs of hex characters back to binary bytes.
+ *              Includes input validation and comprehensive error handling.
+ */
 std::string StringUtility::unhex(const std::string& hexString)
 {
-	// Input validation
+	// Validate input string
 	if (hexString.empty()) {
 		return "";
 	}
 
-	try
-	{
+	try {
+		// Use Boost's unhex algorithm for efficient conversion
 		return boost::algorithm::unhex(hexString);
 	}
-	catch (...)
-	{
+	catch (...) {
+		// Return empty string for any conversion errors
 		return "";
 	}
 }
 
-// Removes leading and trailing whitespace from a string
-void StringUtility::trim(std::string& stringToTrim)
+/**
+ * @brief       Removes leading and trailing whitespace from a string
+ * @param[in,out] targetString    String to trim (modified in-place)
+ * @details     Uses Boost's trim algorithm for efficient whitespace removal.
+ *              Modifies the input string directly for optimal performance.
+ */
+void StringUtility::trim(std::string& targetString)
 {
-	boost::algorithm::trim(stringToTrim);
+	boost::algorithm::trim(targetString);
 }
 
-// Returns current system timestamp in milliseconds as a string
+/**
+ * @brief       Generates current system timestamp in milliseconds
+ * @return      Current timestamp as string in milliseconds since epoch
+ * @details     Returns high-precision timestamp suitable for logging,
+ *              performance measurement, and time-based operations.
+ */
 std::string StringUtility::getTimestamp()
 {
-	const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+	// Get current time in milliseconds since epoch for high precision
+	const auto currentTime = std::chrono::duration_cast<std::chrono::milliseconds>(
 		std::chrono::system_clock::now().time_since_epoch());
-	return std::to_string(now.count());
+
+	return std::to_string(currentTime.count());
 }
