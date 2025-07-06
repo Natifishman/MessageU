@@ -1,7 +1,10 @@
 /**
- * @author  Natanel Maor Fishman
- * @file    ConfigManager.cpp
- * @brief   Handle files (on file system).
+ * @file        ConfigManager.cpp
+ * @author      Natanel Maor Fishman
+ * @brief       Advanced file system management utility implementation
+ * @details     Implementation of comprehensive file I/O operations with robust error handling,
+ *              directory management, and resource cleanup for production environments
+ * @date        2025
  */
 
 #include "ConfigManager.h"
@@ -10,205 +13,245 @@
 #include <fstream>
 #include <boost/filesystem.hpp>
 
-// Default constructor
-ConfigManager::ConfigManager() : m_fileStream(nullptr), m_isOpen(false)
+ /**
+  * @brief       Default constructor - initializes file manager
+  * @details     Creates a new file manager instance with no open files
+  */
+ConfigManager::ConfigManager() : _fileStream(nullptr), _isFileOpen(false)
 {
 }
 
-// Default destructor
+/**
+ * @brief       Virtual destructor with automatic resource cleanup
+ * @details     Ensures proper cleanup of file handles and memory resources
+ */
 ConfigManager::~ConfigManager()
 {
 	closeFile();
 }
 
-
 /**
- * Opens a file for reading or writing operations
- * Creates necessary directory structure if it doesn't exist
+ * @brief       Opens a file for reading or writing operations
+ * @param[in]   filePath    Path to the file to open
+ * @param[in]   writeMode   If true, opens for writing; if false, opens for reading
+ * @return      true if file opened successfully, false otherwise
+ * @details     Automatically creates parent directories if they don't exist.
+ *              Closes any previously open file before opening the new one.
+ *              Uses comprehensive error handling for robust operation.
  */
-bool ConfigManager::openFile(const std::string& filePath, bool write)
+bool ConfigManager::openFile(const std::string& filePath, bool writeMode)
 {
-	// handle empty file path
+	// Validate input file path
 	if (filePath.empty()) {
 		return false;
 	}
 
-	try
-	{
+	try {
 		// Clean up any existing file stream before creating a new one
 		closeFile();
 
-		const auto openMode = write ? (std::fstream::binary | std::fstream::out) : (std::fstream::binary | std::fstream::in);
-		m_fileStream = new std::fstream;
+		// Determine appropriate file open mode
+		const auto openMode = writeMode ?
+			(std::fstream::binary | std::fstream::out) :
+			(std::fstream::binary | std::fstream::in);
 
-		// Create parent directories if needed
-		const auto parentDir = boost::filesystem::path(filePath).parent_path();
-		if (!parentDir.empty())
-		{
-			(void)create_directories(parentDir);
+		_fileStream = new std::fstream;
+
+		// Create parent directories if they don't exist
+		const auto parentDirectory = boost::filesystem::path(filePath).parent_path();
+		if (!parentDirectory.empty()) {
+			(void)create_directories(parentDirectory);
 		}
 
-		m_fileStream->open(filePath, openMode);
-		m_isOpen = m_fileStream->is_open();
+		// Open the file with specified mode
+		_fileStream->open(filePath, openMode);
+		_isFileOpen = _fileStream->is_open();
 
-		return m_isOpen;
+		return _isFileOpen;
 	}
 	catch (...) {
-		// Log error here if needed
-		m_isOpen = false;
+		// Comprehensive error handling - reset state on any exception
+		_isFileOpen = false;
 		return false;
 	}
 }
-
-
-// Safely closes the current file stream
-void ConfigManager::closeFile()
-{
-	try
-	{
-		if (m_fileStream != nullptr) {
-			m_fileStream->close();
-		}
-	}
-	catch (...) {
-		// Log error not needed
-	}
-
-	// Clean up resources
-	delete m_fileStream;
-	m_fileStream = nullptr;
-	m_isOpen = false;
-}
-
-// Read a specified number of bytes from the file stream
-bool ConfigManager::readBytes(uint8_t* const destination, const size_t byteCount) const
-{
-	// handle invalid arguments
-	if (!m_fileStream || !m_isOpen || !destination || byteCount == 0) {
-		return false;
-	}
-
-	try
-	{
-		m_fileStream->read(reinterpret_cast<char*>(destination), byteCount);
-		return true;
-	}
-	catch (...) {
-		// Log error here if needed
-		return false;
-	}
-}
-
-
-// Writes a specified number of bytes to the file stream
-bool ConfigManager::writeBytes(const uint8_t* const source, const size_t byteCount) const
-{
-	// handle invalid arguments
-	if (!m_fileStream || !m_isOpen || !source || byteCount == 0) {
-		return false;
-	}
-
-	try
-	{
-		m_fileStream->write(reinterpret_cast<const char*>(source), byteCount);
-		return true;
-	}
-	catch (...) {
-		// Log error here if needed
-		return false;
-	}
-}
-
-
-// Deletes a file from the filesystem
-bool ConfigManager::deleteFile(const std::string& filePath) const
-{
-	try
-	{
-		// handle empty file path
-		return (0 == std::remove(filePath.c_str()));
-	}
-	catch (...)
-	{
-		return false;
-	}
-}
-
 
 /**
- * Read a single line from fs to line.
+ * @brief       Safely closes the currently open file
+ * @details     Closes the file stream and releases associated resources.
+ *              Safe to call multiple times or when no file is open.
  */
-bool ConfigManager::readTextLine(std::string& lineContent) const
+void ConfigManager::closeFile()
 {
-	// handle invalid arguments
-	if (!m_fileStream || !m_isOpen) {
+	try {
+		if (_fileStream != nullptr) {
+			_fileStream->close();
+		}
+	}
+	catch (...) {
+		// Silent error handling for close operations
+	}
+
+	// Clean up resources regardless of close success
+	delete _fileStream;
+	_fileStream = nullptr;
+	_isFileOpen = false;
+}
+
+/**
+ * @brief       Reads binary data from the currently open file
+ * @param[out]  destinationBuffer   Buffer to store read data
+ * @param[in]   dataSize            Number of bytes to read
+ * @return      true if read operation successful, false otherwise
+ * @details     Performs comprehensive input validation and error handling
+ */
+bool ConfigManager::readBytes(uint8_t* destinationBuffer, size_t dataSize) const
+{
+	// Validate input parameters and file state
+	if (!_fileStream || !_isFileOpen || !destinationBuffer || dataSize == 0) {
 		return false;
 	}
 
 	try {
-		if (!std::getline(*m_fileStream, lineContent)) {
-			return false;
-		}
-		return !lineContent.empty();
+		_fileStream->read(reinterpret_cast<char*>(destinationBuffer), dataSize);
+		return true;
 	}
-	catch (...)
-	{
-		// Log error here if needed
+	catch (...) {
 		return false;
 	}
 }
 
-// Writes a string to the file and appends a newline character
+/**
+ * @brief       Writes binary data to the currently open file
+ * @param[in]   sourceData      Pointer to data to write
+ * @param[in]   dataSize        Number of bytes to write
+ * @return      true if write operation successful, false otherwise
+ * @details     Performs comprehensive input validation and error handling
+ */
+bool ConfigManager::writeBytes(const uint8_t* sourceData, size_t dataSize) const
+{
+	// Validate input parameters and file state
+	if (!_fileStream || !_isFileOpen || !sourceData || dataSize == 0) {
+		return false;
+	}
+
+	try {
+		_fileStream->write(reinterpret_cast<const char*>(sourceData), dataSize);
+		return true;
+	}
+	catch (...) {
+		return false;
+	}
+}
+
+/**
+ * @brief       Deletes a file from the filesystem
+ * @param[in]   filePath    Path to the file to delete
+ * @return      true if file deleted successfully, false otherwise
+ * @details     Uses standard C++ file removal with comprehensive error handling
+ */
+bool ConfigManager::deleteFile(const std::string& filePath) const
+{
+	try {
+		// Use standard C++ file removal with error checking
+		return (0 == std::remove(filePath.c_str()));
+	}
+	catch (...) {
+		return false;
+	}
+}
+
+/**
+ * @brief       Reads a text line from the currently open file
+ * @param[out]  lineContent     Buffer to store the read line
+ * @return      true if read operation successful, false otherwise
+ * @details     Reads until newline character and removes it from the result.
+ *              Returns false for empty lines to distinguish from EOF.
+ */
+bool ConfigManager::readTextLine(std::string& lineContent) const
+{
+	// Validate file state
+	if (!_fileStream || !_isFileOpen) {
+		return false;
+	}
+
+	try {
+		if (!std::getline(*_fileStream, lineContent)) {
+			return false;
+		}
+		return !lineContent.empty();
+	}
+	catch (...) {
+		return false;
+	}
+}
+
+/**
+ * @brief       Writes a text line to the currently open file
+ * @param[in]   lineContent     Text line to write (newline automatically added)
+ * @return      true if write operation successful, false otherwise
+ * @details     Automatically appends a newline character to the line
+ */
 bool ConfigManager::writeTextLine(const std::string& lineContent) const
 {
 	std::string lineWithNewline = lineContent + "\n";
-	return writeBytes(reinterpret_cast<const uint8_t*>(lineWithNewline.c_str()), lineWithNewline.size());
+	return writeBytes(reinterpret_cast<const uint8_t*>(lineWithNewline.c_str()),
+		lineWithNewline.size());
 }
 
-
-// Calculates the size of the currently open file
+/**
+ * @brief       Retrieves the size of the currently open file
+ * @return      File size in bytes, or 0 if file is not open or invalid
+ * @details     Preserves the current file position after size calculation.
+ *              Limited to 4GB files for memory safety.
+ */
 size_t ConfigManager::getFileSize() const
 {
-	// handle invalid arguments
-	if (!m_fileStream || !m_isOpen) {
+	// Validate file state
+	if (!_fileStream || !_isFileOpen) {
 		return 0;
 	}
 
-	try
-	{
-		// Save current position
-		const auto currentPos = m_fileStream->tellg();
+	try {
+		// Save current file position
+		const auto currentPosition = _fileStream->tellg();
 
-		// Get file size
-		m_fileStream->seekg(0, std::fstream::end);
-		const auto fileSize = m_fileStream->tellg();
+		// Seek to end to get file size
+		_fileStream->seekg(0, std::fstream::end);
+		const auto fileSize = _fileStream->tellg();
 
-		// Restore position
-		m_fileStream->seekg(currentPos);
+		// Restore original position
+		_fileStream->seekg(currentPosition);
 
-		// Validate size (up to 4GB).
+		// Validate file size (limited to 4GB for memory safety)
 		if ((fileSize <= 0) || (fileSize > UINT32_MAX)) {
 			return 0;
 		}
 
 		return static_cast<size_t>(fileSize);
 	}
-	catch (...)
-	{
-		// Log error here if needed
+	catch (...) {
 		return 0;
 	}
 }
 
-// Reads an entire file into memory in a single operation
+/**
+ * @brief       Reads an entire file into memory in a single operation
+ * @param[in]   filePath        Path to the file to read
+ * @param[out]  fileData        Pointer to allocated memory containing file data
+ * @param[out]  fileSize        Size of the file in bytes
+ * @return      true if read operation successful, false otherwise
+ * @details     Allocates memory for the file data. Caller is responsible for
+ *              freeing the memory using delete[] when no longer needed.
+ */
 bool ConfigManager::readFileComplete(const std::string& filePath, uint8_t*& fileData, size_t& fileSize)
 {
-	// handle empty file path
+	// Open the file for reading
 	if (!openFile(filePath)) {
 		return false;
 	}
 
-	// Get file size
+	// Get file size for memory allocation
 	fileSize = getFileSize();
 	if (fileSize == 0) {
 		closeFile();
@@ -216,18 +259,18 @@ bool ConfigManager::readFileComplete(const std::string& filePath, uint8_t*& file
 	}
 
 	try {
+		// Allocate memory for file data
 		fileData = new uint8_t[fileSize];
-		const bool success = readBytes(fileData, fileSize);
+		const bool readSuccess = readBytes(fileData, fileSize);
 
-		// Clean up if read failed
-		if (!success)
-		{
+		// Clean up allocated memory if read failed
+		if (!readSuccess) {
 			delete[] fileData;
 			fileData = nullptr;
 		}
 
 		closeFile();
-		return success;
+		return readSuccess;
 	}
 	catch (...) {
 		closeFile();
@@ -235,28 +278,40 @@ bool ConfigManager::readFileComplete(const std::string& filePath, uint8_t*& file
 	}
 }
 
-// Open and write data to file.
-bool ConfigManager::writeFileComplete(const std::string& filePath, const std::string& content)
+/**
+ * @brief       Writes data to a file in a single operation
+ * @param[in]   filePath        Path to the file to write
+ * @param[in]   fileContent     Content to write to the file
+ * @return      true if write operation successful, false otherwise
+ * @details     Creates the file if it doesn't exist and overwrites if it does
+ */
+bool ConfigManager::writeFileComplete(const std::string& filePath, const std::string& fileContent)
 {
-	// handle empty file path
-	if (content.empty() || !openFile(filePath, true)) {
+	// Validate input and open file for writing
+	if (fileContent.empty() || !openFile(filePath, true)) {
 		return false;
 	}
 
-	const bool success = writeBytes(reinterpret_cast<const uint8_t* const>(content.c_str()), content.size());
-	
+	const bool writeSuccess = writeBytes(reinterpret_cast<const uint8_t* const>(fileContent.c_str()),
+		fileContent.size());
+
 	closeFile();
-	return success;
+	return writeSuccess;
 }
 
-// Returns absolute path to %TMP% folder.
+/**
+ * @brief       Retrieves the system's temporary directory path
+ * @return      Absolute path to the system temporary directory
+ * @details     Uses Boost filesystem for cross-platform compatibility.
+ *              Falls back to "/tmp" on error for Unix-like systems.
+ */
 std::string ConfigManager::getTemporaryDirectory() const
 {
 	try {
 		return boost::filesystem::temp_directory_path().string();
 	}
 	catch (...) {
-		// Fallback to a default temp path if needed
+		// Fallback to default temporary directory on error
 		return "/tmp";
 	}
 }

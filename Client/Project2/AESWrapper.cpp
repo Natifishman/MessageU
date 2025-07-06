@@ -1,8 +1,12 @@
 /**
- * @author	Natanel Maor Fishman
- * @file	AESWrapper.cpp
- * @brief	Handle AES encryption (Symmetric) for enhanced security and flexibility.
+ * @file        AESWrapper.cpp
+ * @author      Natanel Maor Fishman
+ * @brief       AES encryption wrapper providing symmetric encryption capabilities
+ * @details     Implements AES-CBC mode encryption/decryption with secure key generation
+ *              using RDRAND for cryptographic strength
+ * @date        2025
  */
+
 #include "AESWrapper.h"
 #include <modes.h>
 #include <aes.h>
@@ -12,110 +16,171 @@
 #include <string>
 #include <cstring>
 
-
-void AESWrapper::GenerateKey(uint8_t* const buffer, const size_t length)
+ /**
+  * @brief       Generates cryptographically secure random bytes using hardware RDRAND
+  * @param[out]  keyBuffer     Output buffer to store generated random bytes
+  * @param[in]   bufferSize    Size of the buffer in bytes
+  * @throws      std::invalid_argument if keyBuffer is null
+  * @throws      std::runtime_error if RDRAND hardware instruction fails
+  * @details     Uses Intel's RDRAND instruction for hardware-based entropy generation,
+  *              ensuring cryptographic quality randomness for key material
+  */
+void AESWrapper::GenerateKey(uint8_t* const keyBuffer, const size_t bufferSize)
 {
-	if (!buffer) {
-		throw std::invalid_argument("Buffer cannot be null");
+	if (!keyBuffer) {
+		throw std::invalid_argument("Key buffer cannot be null");
 	}
 
-	for (size_t i = 0; i < length; i += sizeof(unsigned int))
+	for (size_t byteIndex = 0; byteIndex < bufferSize; byteIndex += sizeof(unsigned int))
 	{
-		unsigned int temp;
-		int result = _rdrand32_step(&temp);
+		unsigned int randomValue;
+		int rdrandResult = _rdrand32_step(&randomValue);
 
-		if (result == 0) {
-			throw std::runtime_error("RDRAND failed to generate a random number");
+		if (rdrandResult == 0) {
+			throw std::runtime_error("Hardware RDRAND instruction failed to generate random number");
 		}
 
-		// Copy the generated value to the buffer
-		if (i + sizeof(unsigned int) <= length) {
-			memcpy(&buffer[i], &temp, sizeof(unsigned int));
-		}
-		else {
-			// Handle the last chunk if smaller than sizeof(unsigned int)
-			memcpy(&buffer[i], &temp, length - i);
-		}
+		// Copy random bytes to the buffer, handling partial word at the end
+		const size_t remainingBytes = bufferSize - byteIndex;
+		const size_t bytesToCopy = (remainingBytes >= sizeof(unsigned int)) ?
+			sizeof(unsigned int) : remainingBytes;
+
+		memcpy(&keyBuffer[byteIndex], &randomValue, bytesToCopy);
 	}
 }
 
+/**
+ * @brief       Default constructor - generates a new random AES key
+ * @details     Automatically generates a cryptographically secure 256-bit AES key
+ *              using hardware random number generation
+ */
 AESWrapper::AESWrapper()
 {
-	GenerateKey(_key.symmetricKey, sizeof(_key.symmetricKey));
+	GenerateKey(_aesKey.symmetricKey, sizeof(_aesKey.symmetricKey));
 }
 
-
-AESWrapper::AESWrapper(const SymmetricKeyStruct& symKey) : _key(symKey)
+/**
+ * @brief       Constructor with pre-existing symmetric key
+ * @param[in]   existingKey   Pre-generated symmetric key structure
+ * @details     Allows initialization with an existing key, useful for key sharing
+ *              or persistent key storage scenarios
+ */
+AESWrapper::AESWrapper(const SymmetricKeyStruct& existingKey) : _aesKey(existingKey)
 {
-	// Validate key material if needed
+	// TODO: Add key validation logic here for production use
+	// Validate key material integrity and strength
 }
 
-//Encrypt a string using AES-CBC mode
-std::string AESWrapper::encrypt(const std::string& plain) const
+/**
+ * @brief       Encrypts a string using AES-CBC mode
+ * @param[in]   plaintextString    Input string to encrypt
+ * @return      Encrypted data as binary string
+ * @throws      std::runtime_error if encryption fails
+ * @details     Convenience method for string encryption. Returns empty string
+ *              if input is empty to avoid unnecessary processing
+ */
+std::string AESWrapper::encrypt(const std::string& plaintextString) const
 {
-	if (plain.empty()) {
+	if (plaintextString.empty()) {
 		return std::string();
 	}
 
-	return encrypt(reinterpret_cast<const uint8_t*>(plain.c_str()), plain.size());
+	return encrypt(reinterpret_cast<const uint8_t*>(plaintextString.c_str()),
+		plaintextString.size());
 }
 
-//Encrypt raw data using AES-CBC mode
-std::string AESWrapper::encrypt(const uint8_t* plain, size_t length) const
+/**
+ * @brief       Encrypts raw binary data using AES-CBC mode
+ * @param[in]   plaintextData      Pointer to input data buffer
+ * @param[in]   dataLength         Length of input data in bytes
+ * @return      Encrypted data as binary string
+ * @throws      std::invalid_argument if input buffer is invalid
+ * @throws      std::runtime_error if encryption operation fails
+ * @details     Core encryption method using AES-256 in CBC mode with PKCS7 padding.
+ *              Currently uses a fixed IV (zero-filled) for demonstration.
+ *              Production code must use cryptographically secure random IVs.
+ */
+std::string AESWrapper::encrypt(const uint8_t* plaintextData, size_t dataLength) const
 {
-	// Validate input buffer
-	if (!plain && length > 0) {
-		throw std::invalid_argument("Invalid input buffer");
+	// Validate input parameters
+	if (!plaintextData && dataLength > 0) {
+		throw std::invalid_argument("Plaintext data buffer cannot be null when data length > 0");
 	}
 
 	try {
-		// TODO: Implement proper IV generation and handling (Didnt ask for it in the assignment)
-		// WARNING for myself: In production code, IV should never be a fixed value.
-		CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };
+		// CRITICAL SECURITY WARNING: Fixed IV is used for demonstration only
+		// In production environments, generate a cryptographically secure random IV
+		// for each encryption operation and transmit it alongside the ciphertext
+		CryptoPP::byte initializationVector[CryptoPP::AES::BLOCKSIZE] = { 0 };
 
-		// Set up the encryption
-		CryptoPP::AES::Encryption aesEncryption(_key.symmetricKey, sizeof(_key.symmetricKey));
-		CryptoPP::CBC_Mode_ExternalCipher::Encryption cbcEncryption(aesEncryption, iv);
+		// Initialize AES encryption engine with 256-bit key
+		CryptoPP::AES::Encryption aesEncryptionEngine(_aesKey.symmetricKey,
+			sizeof(_aesKey.symmetricKey));
 
-		// Encrypt the data
-		std::string cipher;
-		CryptoPP::StreamTransformationFilter stfEncryptor(cbcEncryption, new CryptoPP::StringSink(cipher));
-		stfEncryptor.Put(plain, length);
-		stfEncryptor.MessageEnd();
+		// Configure CBC mode encryption with the AES engine and IV
+		CryptoPP::CBC_Mode_ExternalCipher::Encryption cbcEncryptionEngine(
+			aesEncryptionEngine, initializationVector);
 
-		return cipher;
+		// Perform the encryption with automatic PKCS7 padding
+		std::string encryptedData;
+		CryptoPP::StreamTransformationFilter encryptionFilter(
+			cbcEncryptionEngine, new CryptoPP::StringSink(encryptedData));
+
+		encryptionFilter.Put(plaintextData, dataLength);
+		encryptionFilter.MessageEnd();
+
+		return encryptedData;
 	}
-	catch (const CryptoPP::Exception& e) {
-		throw std::runtime_error(std::string("Encryption failed: ") + e.what());
+	catch (const CryptoPP::Exception& cryptoException) {
+		throw std::runtime_error(std::string("AES encryption failed: ") +
+			cryptoException.what());
 	}
 }
 
-
-std::string AESWrapper::decrypt(const uint8_t* cipher, size_t length) const
+/**
+ * @brief       Decrypts raw binary data using AES-CBC mode
+ * @param[in]   encryptedData      Pointer to encrypted data buffer
+ * @param[in]   dataLength         Length of encrypted data in bytes
+ * @return      Decrypted plaintext as string
+ * @throws      std::invalid_argument if input buffer is invalid
+ * @throws      std::runtime_error if decryption operation fails
+ * @details     Core decryption method using AES-256 in CBC mode with PKCS7 unpadding.
+ *              The IV must match the one used during encryption. Currently uses
+ *              the same fixed IV as the encryption method.
+ */
+std::string AESWrapper::decrypt(const uint8_t* encryptedData, size_t dataLength) const
 {
-	// Error handling
-	if (!cipher && length > 0) {
-		throw std::invalid_argument("Invalid input buffer");
+	// Validate input parameters
+	if (!encryptedData && dataLength > 0) {
+		throw std::invalid_argument("Encrypted data buffer cannot be null when data length > 0");
 	}
 
 	try {
-		// TODO: Implement proper IV handling
-		// WARNING for myself: In production code, IV should match the one used for encryption
-		CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };
+		// IV must match the one used during encryption
+		// This should be extracted from the encrypted data or
+		// transmitted separately in a secure manner
+		CryptoPP::byte initializationVector[CryptoPP::AES::BLOCKSIZE] = { 0 };
 
-		// Set up the decryption
-		CryptoPP::AES::Decryption aesDecryption(_key.symmetricKey, sizeof(_key.symmetricKey));
-		CryptoPP::CBC_Mode_ExternalCipher::Decryption cbcDecryption(aesDecryption, iv);
+		// Initialize AES decryption engine with 256-bit key
+		CryptoPP::AES::Decryption aesDecryptionEngine(_aesKey.symmetricKey,
+			sizeof(_aesKey.symmetricKey));
 
-		// Decrypt the data
-		std::string decrypted;
-		CryptoPP::StreamTransformationFilter stfDecryptor(cbcDecryption, new CryptoPP::StringSink(decrypted));
-		stfDecryptor.Put(cipher, length);
-		stfDecryptor.MessageEnd();
+		// Configure CBC mode decryption with the AES engine and IV
+		CryptoPP::CBC_Mode_ExternalCipher::Decryption cbcDecryptionEngine(
+			aesDecryptionEngine, initializationVector);
 
-		return decrypted;
+		// Perform the decryption with automatic PKCS7 unpadding
+		std::string decryptedPlaintext;
+		CryptoPP::StreamTransformationFilter decryptionFilter(
+			cbcDecryptionEngine, new CryptoPP::StringSink(decryptedPlaintext));
+
+		decryptionFilter.Put(encryptedData, dataLength);
+		decryptionFilter.MessageEnd();
+
+		return decryptedPlaintext;
 	}
-	catch (const CryptoPP::Exception& e) {
-		throw std::runtime_error(std::string("Decryption failed: ") + e.what());
+	catch (const CryptoPP::Exception& cryptoException) {
+		throw std::runtime_error(std::string("AES decryption failed: ") +
+			cryptoException.what());
 	}
 }
