@@ -1,128 +1,149 @@
 /**
- * @author	Natanel Fishman
- * @file	ConsoleInterface.cpp
- * @brief	Interactive command-line interface for MessageU client
+ * @file        ConsoleInterface.cpp
+ * @author      Natanel Fishman
+ * @brief       interactive console interface implementation
+ * @details     Implementation of command-line interface with user
+ *              authentication, menu management, and secure messaging operations
+ * @date        2025
  */
+
 #include "ConsoleInterface.h"
 #include <iostream>
 #include <algorithm>
 #include <boost/algorithm/string/trim.hpp>
 
-// Displays an error message and terminates the application
+ /**
+  * @brief       Terminates application with error notification
+  * @param[in]   errorMessage    Error message to display before termination
+  * @details     Displays critical error and exits application gracefully
+  */
 void ConsoleInterface::terminateWithError(const std::string& errorMessage) const
 {
-	std::cerr << "Critical Error: " << errorMessage << std::endl;
-	std::cerr << "Application will now exit." << std::endl;
-	waitForInput();
-	exit(EXIT_FAILURE);
+    std::cerr << "Critical Error: " << errorMessage << std::endl;
+    std::cerr << "Application will now exit." << std::endl;
+    waitForInput();
+    exit(EXIT_FAILURE);
 }
 
-// Prepare the client interface and establishes connection parameters
+/**
+ * @brief       Prepares the client interface and establishes connections
+ * @details     Loads server configuration and user credentials for operation
+ */
 void ConsoleInterface::prepare()
 {
-	if (!engineInstance.loadServerConfiguration())
-	{
-		terminateWithError(engineInstance.getErrorMessage());
-	}
-	authenticated = engineInstance.loadUserCredentials();
-
+    if (!engineInstance.loadServerConfiguration())
+    {
+        terminateWithError(engineInstance.getErrorMessage());
+    }
+    authenticated = engineInstance.loadUserCredentials();
 }
 
-// Renders the main application menu with appropriate user context
+/**
+ * @brief       Displays the main application menu with user context
+ * @details     Renders personalized greeting and available commands based on
+ *              authentication status
+ */
 void ConsoleInterface::showMenu() const
 {
-	clearScreen();
+    clearScreen();
 
-	// Display personalized greeting if authenticated
-	if (authenticated && !engineInstance.getSelfUsername().empty()) {
-		std::cout << "Welcome back " << engineInstance.getSelfUsername() << "! ";
-	}
+    // Display personalized greeting if authenticated
+    if (authenticated && !engineInstance.getSelfUsername().empty()) {
+        std::cout << "Welcome back " << engineInstance.getSelfUsername() << "! ";
+    }
 
-	std::cout << "MessageU client at your service." << std::endl << std::endl;
+    std::cout << "MessageU client at your service." << std::endl << std::endl;
 
-	// Display available commands
-	for (const auto& command : availableCommands) {
-		std::cout << command << std::endl;
-	}
+    // Display available commands
+    for (const auto& command : _availableCommands) {
+        std::cout << command << std::endl;
+    }
 }
 
-
 /**
- * Captures user input with validation
- * Ensures non-empty input and handles input stream errors
+ * @brief       Captures and validates user text input
+ * @param[in]   promptMessage    Optional prompt message for user
+ * @return      Validated user input string
+ * @details     Ensures non-empty input with comprehensive error handling
  */
-std::string ConsoleInterface::captureInput(const std::string& prompt) const
+std::string ConsoleInterface::captureInput(const std::string& promptMessage) const
 {
-	std::string input;
+    std::string input;
 
-	std::cout << prompt << std::endl;
-	do
-	{
-		// Capture user input
-		std::getline(std::cin, input);
-		boost::algorithm::trim(input);
+    // Display prompt message if provided
+    std::cout << promptMessage << std::endl;
+    do
+    {
+        // Capture user input
+        std::getline(std::cin, input);
+        boost::algorithm::trim(input);
 
-		// Handle input stream errors
-		if (std::cin.eof()) {
-			std::cin.clear(); // Reset the stream state
-		}
+        // Handle input stream errors
+        if (std::cin.eof()) {
+            std::cin.clear(); // Reset the stream state
+        }
 
-		// Ensure input is not empty
-		if (input.empty())
-		{
-			std::cout << "Input cannot be empty. Please try again:" << std::endl;
-		}
+        // Ensure input is not empty
+        if (input.empty())
+        {
+            std::cout << "Input cannot be empty. Please try again:" << std::endl;
+        }
 
-	} while (input.empty());
+    } while (input.empty());
 
-	return input;
+    return input;
 }
 
-
 /**
- * Read & Validate user's input according to main menu options.
- * If valid option, assign menuOption.
+ * @brief       Validates user command selection against available options
+ * @param[out]  selectedCommand    Validated command if selection is successful
+ * @return      true if valid command selected, false otherwise
+ * @details     Converts user input to valid command with error handling
  */
 bool ConsoleInterface::validateCommandSelection(MenuCommands& selectedCommand) const
 {
-	const std::string input = captureInput();
+    const std::string input = captureInput();
 
-	// Find matching command based on numeric input
-	const auto commandIterator = std::find_if(availableCommands.begin(), availableCommands.end(),
-		[&input](auto& command) { return (input == std::to_string(static_cast<uint32_t>(command.getType()))); });
-	
-	// Validate command selection
-	if (commandIterator == availableCommands.end())
-	{
-		return false;
-	}
+    // Find matching command based on numeric input
+    const auto commandIterator = std::find_if(_availableCommands.begin(), _availableCommands.end(),
+        [&input](auto& command) { return (input == std::to_string(static_cast<uint32_t>(command.getType()))); });
 
-	selectedCommand = *commandIterator;
-	return true;
+    // Validate command selection
+    if (commandIterator == _availableCommands.end())
+    {
+        return false;
+    }
+
+    selectedCommand = *commandIterator;
+    return true;
 }
 
-// Processes and executes the selected command
+/**
+ * @brief       Processes user command input and executes selected operation
+ * @details     Captures user input, validates selection, and executes corresponding
+ *              command with comprehensive error handling
+ */
 void ConsoleInterface::processCommand()
 {
-	MenuCommands selectedCommand;
-	bool validSelection = validateCommandSelection(selectedCommand);
+    MenuCommands selectedCommand;
+    bool validSelection = validateCommandSelection(selectedCommand);
 
-	// Handle invalid selection
-	while (!validSelection)
-	{
-		std::cout << "Invalid selection. Please enter a valid command number." << std::endl;
-		validSelection = validateCommandSelection(selectedCommand);
-	}
+    // Handle invalid selection
+    while (!validSelection)
+    {
+        std::cout << "Invalid selection. Please enter a valid command number." << std::endl;
+        validSelection = validateCommandSelection(selectedCommand);
+    }
 
-	clearScreen();
-	std::cout << std::endl;
+    clearScreen();
+    std::cout << std::endl;
 
-	// Authentication check
-	if (!authenticated && selectedCommand.requiresAuthentication())
-	{
-		std::cout << "Authentication required. Please register first." << std::endl;
-		return;
-	}
+    // Authentication check
+    if (!authenticated && selectedCommand.requiresAuthentication())
+    {
+        std::cout << "Authentication required. Please register first." << std::endl;
+        return;
+    }
 
     // Execute selected command
     bool operationSuccess = executeSelectedCommand(selectedCommand);
@@ -138,7 +159,12 @@ void ConsoleInterface::processCommand()
     }
 }
 
-// Executes the selected command and returns the operation result
+/**
+ * @brief       Executes the selected command and returns operation result
+ * @param[in]   command    Command to execute
+ * @return      true if command executed successfully, false otherwise
+ * @details     Handles all command types with appropriate user interaction
+ */
 bool ConsoleInterface::executeSelectedCommand(const MenuCommands& command)
 {
     bool operationSuccess = false;
@@ -225,7 +251,10 @@ bool ConsoleInterface::executeSelectedCommand(const MenuCommands& command)
     return operationSuccess;
 }
 
-// Displays the list of registered users
+/**
+ * @brief       Displays list of registered users
+ * @details     Shows all available users in formatted list
+ */
 void ConsoleInterface::displayUserList() const
 {
     std::vector<std::string> usernames = engineInstance.getUsernames();
@@ -245,7 +274,11 @@ void ConsoleInterface::displayUserList() const
     }
 }
 
-// Displays received messages
+/**
+ * @brief       Displays received messages in formatted output
+ * @param[in]   messages    Vector of messages to display
+ * @details     Formats and displays message content with sender information
+ */
 void ConsoleInterface::displayMessages(const std::vector<MessageEngine::MessageData>& messages) const
 {
     if (messages.empty())
