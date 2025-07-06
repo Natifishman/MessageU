@@ -4,6 +4,9 @@
  * @brief       Client's primary message processing and coordination component.
  * @note        MessageEngine orchestrates communication between the console interface
  *              and backend subsystems including configuration management and network communication layers.
+ * @details     This implementation provides the complete messaging functionality including
+ *              client registration, key exchange, message encryption/decryption, and server
+ *              communication with robust error handling and resource management.
  */
 #include "RSAWrapper.h"
 #include "AESWrapper.h"
@@ -13,8 +16,13 @@
 #include "NetworkConnection.h"
 #include <limits>
 
-
-//Stream operator for MessageType enumeration
+/**
+ * @brief Stream operator for MessageType enumeration serialization
+ * @param[in,out] os Output stream to write to
+ * @param[in] type Message type to serialize
+ * @return Reference to the output stream
+ * @details Casts the enumeration to its underlying type for network transmission
+ */
 std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 {
 	// Cast enumeration to underlying type for serialization
@@ -22,7 +30,12 @@ std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 	return os;
 }
 
-//Constructs a new MessageEngine with initialized subsystems
+/**
+ * @brief Constructs a new MessageEngine with initialized subsystems
+ * @details Creates and initializes ConfigManager and NetworkConnection components.
+ *          Throws std::bad_alloc if memory allocation fails during initialization.
+ * @throws std::bad_alloc if subsystem initialization fails
+ */
 MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullptr), _cryptoEngine(nullptr)
 {
 	try {
@@ -43,12 +56,22 @@ MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullpt
 	}
 }
 
+/**
+ * @brief Virtual destructor with automatic resource cleanup
+ * @details Ensures proper cleanup of all allocated resources including cryptographic
+ *          components, network connections, and configuration managers
+ */
 MessageEngine::~MessageEngine() {
 	cleanup();
 }
 
+/**
+ * @brief Releases all allocated resources in optimal order
+ * @details Deletes all component pointers and resets them to nullptr to prevent
+ *          double-deletion and ensure proper cleanup
+ */
 void MessageEngine::cleanup() {
-	// Release resources in optimal order
+	// Release resources in optimal order (reverse of allocation)
 	if (_cryptoEngine) {
 		delete _cryptoEngine;
 		_cryptoEngine = nullptr;
@@ -65,9 +88,15 @@ void MessageEngine::cleanup() {
 	}
 }
 
-// Parses server connection information from configuration file
+/**
+ * @brief Parses server connection information from configuration file
+ * @return true if configuration loaded successfully, false otherwise
+ * @details Reads server address and port from server.info file and configures
+ *          the network connection component for communication
+ */
 bool MessageEngine::loadServerConfiguration()
 {
+	// Open server configuration file for reading
 	if (!_configManager->openFile(SERVER_INFO))
 	{
 		clearLastError();
@@ -75,6 +104,7 @@ bool MessageEngine::loadServerConfiguration()
 		return false;
 	}
 
+	// Read server connection string
 	std::string serverData;
 	if (!_configManager->readTextLine(serverData))
 	{
@@ -84,7 +114,7 @@ bool MessageEngine::loadServerConfiguration()
 	}
 	_configManager->closeFile();
 
-	// Parse server address and port
+	// Parse server address and port from "address:port" format
 	StringUtility::trim(serverData);
 	const auto separatorPos = serverData.find(':');
 	if (separatorPos == std::string::npos)
@@ -96,6 +126,7 @@ bool MessageEngine::loadServerConfiguration()
 	const auto serverAddress = serverData.substr(0, separatorPos);
 	const auto serverPort = serverData.substr(separatorPos + 1);
 
+	// Configure network connection with parsed address and port
 	if (!_networkManager->configureEndpoint(serverAddress, serverPort))
 	{
 		clearLastError();
@@ -105,10 +136,17 @@ bool MessageEngine::loadServerConfiguration()
 	return true;
 }
 
-
+/**
+ * @brief Loads user credentials and cryptographic keys from configuration file
+ * @return true if credentials loaded successfully, false otherwise
+ * @details Reads username, UUID, and private key from my.info file and initializes
+ *          the RSA cryptographic engine for secure communication
+ */
 bool MessageEngine::loadUserCredentials()
 {
 	std::string data;
+	
+	// Open client configuration file for reading
 	if (!_configManager->openFile(CLIENT_INFO))
 	{
 		clearLastError();
@@ -116,7 +154,7 @@ bool MessageEngine::loadUserCredentials()
 		return false;
 	}
 
-	// Extract username
+	// Extract and validate username
 	if (!_configManager->readTextLine(data))
 	{
 		clearLastError();
@@ -133,7 +171,7 @@ bool MessageEngine::loadUserCredentials()
 	}
 	m_localUser.username = data;
 
-	// Extract client UUID
+	// Extract and validate client UUID
 	if (!_configManager->readTextLine(data))
 	{
 		clearLastError();
@@ -141,6 +179,7 @@ bool MessageEngine::loadUserCredentials()
 		return false;
 	}
 
+	// Decode hex-encoded UUID to binary format
 	data = StringUtility::unhex(data);
 	const char* decodedUuid = data.c_str();
 	if (strlen(decodedUuid) != sizeof(m_localUser.id.uuid))
@@ -152,7 +191,7 @@ bool MessageEngine::loadUserCredentials()
 	}
 	memcpy(m_localUser.id.uuid, decodedUuid, sizeof(m_localUser.id.uuid));
 
-	// Extract private key
+	// Extract and validate private key (Base64 encoded)
 	std::string privateKey;
 	while (_configManager->readTextLine(data))
 	{
@@ -165,6 +204,8 @@ bool MessageEngine::loadUserCredentials()
 		m_errorBuffer << "No private key found in " << CLIENT_INFO;
 		return false;
 	}
+	
+	// Initialize RSA cryptographic engine with private key
 	try
 	{
 		delete _cryptoEngine;
@@ -181,22 +222,29 @@ bool MessageEngine::loadUserCredentials()
 	return true;
 }
 
-
 /**
- * Copy usernames into vector & sort them alphabetically.
- * If m_peerRegistry is empty, an empty vector will be returned.
+ * @brief Retrieves sorted list of all registered usernames
+ * @return Vector of usernames sorted alphabetically
+ * @details Extracts usernames from the local peer registry and sorts them
+ *          for consistent display in the user interface
  */
 std::vector<std::string> MessageEngine::getUsernames() const
 {
 	std::vector<std::string> usernames(m_peerRegistry.size());
+	
+	// Extract usernames from peer registry
 	std::transform(m_peerRegistry.begin(), m_peerRegistry.end(), usernames.begin(),
 		[](const ClientInfo& client) { return client.username; });
+	
+	// Sort alphabetically for consistent display
 	std::sort(usernames.begin(), usernames.end());
 	return usernames;
 }
 
 /**
- * Reset m_errorBuffer StringStream: Empty string, clear errors flag and reset formatting.
+ * @brief Clears the error message buffer and resets formatting
+ * @details Resets the internal string stream to empty state and clears
+ *          all error flags for fresh error reporting
  */
 void MessageEngine::clearLastError()
 {
@@ -207,10 +255,14 @@ void MessageEngine::clearLastError()
 }
 
 /**
- * Store client info to CLIENT_INFO file.
+ * @brief Stores current client information to configuration file
+ * @return true if storage successful, false otherwise
+ * @details Writes username, UUID, and private key to my.info file for persistence
+ *          and future client sessions
  */
 bool MessageEngine::storeClientInfo()
 {
+	// Open client configuration file for writing
 	if (!_configManager->openFile(CLIENT_INFO, true))
 	{
 		clearLastError();
@@ -218,7 +270,7 @@ bool MessageEngine::storeClientInfo()
 		return false;
 	}
 
-	// Write username
+	// Write username as first line
 	if (!_configManager->writeTextLine(m_localUser.username))
 	{
 		clearLastError();
@@ -226,7 +278,7 @@ bool MessageEngine::storeClientInfo()
 		return false;
 	}
 
-	// Write UUID.
+	// Write UUID in hex format
 	const auto hexUUID = StringUtility::hex(m_localUser.id.uuid, sizeof(m_localUser.id.uuid));
 	if (!_configManager->writeTextLine(hexUUID))
 	{
@@ -235,7 +287,7 @@ bool MessageEngine::storeClientInfo()
 		return false;
 	}
 
-	// Write private key (Base64 encoded)
+	// Write private key in Base64 encoded format
 	const auto encodedKey = StringUtility::encodeBase64(_cryptoEngine->getPrivateKey());
 	if (!_configManager->writeBytes(reinterpret_cast<const uint8_t*>(encodedKey.c_str()), encodedKey.size()))
 	{
@@ -249,10 +301,16 @@ bool MessageEngine::storeClientInfo()
 }
 
 /**
- * Validate ResponseHeaderStruct upon an expected ResponseCodeEnum.
+ * @brief Validates response header against expected response code
+ * @param[in] header Response header to validate
+ * @param[in] expectedCode Expected response code for this operation
+ * @return true if header is valid, false otherwise
+ * @details Checks protocol version, response code, and payload size for consistency
+ *          with the expected response structure
  */
 bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const ResponseCodeEnum expectedCode)
 {
+	// Check for server error response
 	if (header.code == RESPONSE_ERROR)
 	{
 		clearLastError();
@@ -260,6 +318,7 @@ bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const Res
 		return false;
 	}
 
+	// Verify response code matches expected code
 	if (header.code != expectedCode)
 	{
 		clearLastError();
@@ -267,6 +326,7 @@ bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const Res
 		return false;
 	}
 
+	// Validate payload size based on response type
 	csize_t expectedSize = DEFAULT_VALUE;
 	switch (header.code)
 	{
@@ -287,10 +347,11 @@ bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const Res
 	}
 	default:
 	{
-		return true;
+		return true; // Variable size responses are handled separately
 	}
 	}
 
+	// Verify payload size matches expected size
 	if (header.payloadSize != expectedSize)
 	{
 		clearLastError();
@@ -302,8 +363,16 @@ bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const Res
 }
 
 /**
- * Receive unknown payload. Payload size is parsed from header.
- * Caller responsible for deleting payload upon success.
+ * @brief Handles reception of unknown payload size with memory allocation
+ * @param[in] request Pointer to request data to send
+ * @param[in] reqSize Size of request data in bytes
+ * @param[in] expectedCode Expected response code for validation
+ * @param[out] payload Reference to payload pointer (allocated by function)
+ * @param[out] size Reference to payload size in bytes
+ * @return true if payload received successfully, false otherwise
+ * @details Establishes connection, sends request, receives response header,
+ *          validates response, and allocates memory for complete payload reception.
+ *          Caller is responsible for deleting the allocated payload memory.
  */
 bool MessageEngine::receiveUnknownPayload(
 	const uint8_t* const request,
@@ -317,18 +386,21 @@ bool MessageEngine::receiveUnknownPayload(
 	payload = nullptr;
 	size = 0;
 
+	// Validate input parameters
 	if (request == nullptr || reqSize == 0) {
 		clearLastError();
 		m_errorBuffer << "Invalid request parameters";
 		return false;
 	}
 
+	// Establish network connection
 	if (!_networkManager->establishConnection()) {
 		clearLastError();
 		m_errorBuffer << "Connection failed: " << _networkManager;
 		return false;
 	}
 
+	// Send request to server
 	if (!_networkManager->sendData(request, reqSize)) {
 		_networkManager->disconnectSocket();
 		clearLastError();
@@ -336,12 +408,14 @@ bool MessageEngine::receiveUnknownPayload(
 		return false;
 	}
 
+	// Receive response header
 	if (!_networkManager->receiveData(buffer, sizeof(buffer))) {
 		clearLastError();
 		m_errorBuffer << "Failed to receive response header: " << _networkManager;
 		return false;
 	}
 
+	// Parse and validate response header
 	memcpy(&response, buffer, sizeof(ResponseHeaderStruct));
 	if (!validateHeader(response, expectedCode)) {
 		clearLastError();
@@ -349,6 +423,7 @@ bool MessageEngine::receiveUnknownPayload(
 		return false;
 	}
 
+	// Handle empty payload case
 	if (response.payloadSize == 0) {
 		return true;  // No payload, but successful response
 	}
@@ -365,7 +440,7 @@ bool MessageEngine::receiveUnknownPayload(
 	}
 	memcpy(payload, ptr, receivedSize);
 
-	// Receive remaining payload if needed
+	// Receive remaining payload in chunks if needed
 	ptr = payload + receivedSize;
 	while (receivedSize < size) {
 		size_t bytesToRead = (size - receivedSize);
@@ -391,138 +466,151 @@ bool MessageEngine::receiveUnknownPayload(
 }
 
 /**
- * Store a client's public key on RAM.
+ * @brief Sets public key for a specific client in peer registry
+ * @param[in] clientID Target client's UUID
+ * @param[in] publicKey RSA public key to store
+ * @return true if key stored successfully, false otherwise
+ * @details Updates the peer registry with the client's public key and sets
+ *          the publicKeySet flag to true for future secure communication
  */
 bool MessageEngine::setClientPublicKey(const ClientIdStruct& clientID, const PublicKeyStruct& publicKey)
 {
+	// Search for client in peer registry
 	for (ClientInfo& client : m_peerRegistry)
 	{
 		if (client.id == clientID)
 		{
+			// Update client's public key and set flag
 			client.publicKey = publicKey;
 			client.publicKeySet = true;
 			return true;
 		}
 	}
-	return false;
+	return false; // Client not found in registry
 }
 
 /**
- * Store a client's symmetric key on RAM.
+ * @brief Sets symmetric key for a specific client in peer registry
+ * @param[in] clientID Target client's UUID
+ * @param[in] symmetricKey AES symmetric key to store
+ * @return true if key stored successfully, false otherwise
+ * @details Updates the peer registry with the client's symmetric key and sets
+ *          the symmetricKeySet flag to true for session encryption
  */
 bool MessageEngine::setClientSymmetricKey(const ClientIdStruct& clientID, const SymmetricKeyStruct& symmetricKey)
 {
+	// Search for client in peer registry
 	for (ClientInfo& client : m_peerRegistry)
 	{
 		if (client.id == clientID)
 		{
+			// Update client's symmetric key and set flag
 			client.symmetricKey = symmetricKey;
 			client.symmetricKeySet = true;
 			return true;
 		}
 	}
-	return false;
+	return false; // Client not found in registry
 }
 
-
 /**
- * Find a client using client ID.
- * Clients list must be retrieved first.
+ * @brief Finds client information by UUID in peer registry
+ * @param[in] clientID UUID to search for
+ * @param[out] client Reference to store found client information
+ * @return true if client found, false otherwise
+ * @details Searches the peer registry for a client with matching UUID
+ *          and populates the client reference if found
  */
 bool MessageEngine::findClientById(const ClientIdStruct& clientID, ClientInfo& client) const
 {
-	for (const ClientInfo& entry : m_peerRegistry)
+	// Linear search through peer registry
+	for (const ClientInfo& peer : m_peerRegistry)
 	{
-		if (entry.id == clientID)
+		if (peer.id == clientID)
 		{
-			client = entry;
+			client = peer;
 			return true;
 		}
 	}
-	return false;
+	return false; // Client not found
 }
 
 /**
- * Find a client using username.
- * Clients list must be retrieved first.
+ * @brief Finds client information by username in peer registry
+ * @param[in] username Username to search for
+ * @param[out] client Reference to store found client information
+ * @return true if client found, false otherwise
+ * @details Searches the peer registry for a client with matching username
+ *          and populates the client reference if found
  */
 bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo& client) const
 {
-	for (const ClientInfo& entry : m_peerRegistry)
+	// Linear search through peer registry
+	for (const ClientInfo& peer : m_peerRegistry)
 	{
-		if (username == entry.username)
+		if (peer.username == username)
 		{
-			client = entry;
+			client = peer;
 			return true;
 		}
 	}
-	return false; // client invalid.
+	return false; // Client not found
 }
 
 /**
- * Register client via the server.
+ * @brief Registers a new client with the server
+ * @param[in] username Display name for the new client
+ * @return true if registration successful, false otherwise
+ * @details Sends registration request to server with username and public key,
+ *          receives assigned client ID and stores it locally
  */
 bool MessageEngine::registerClient(const std::string& username)
 {
-	RequestRegistrationStruct  request;
-	ResponseRegistrationStruct response;
-
-	if (username.length() >= CLIENT_NAME_MAX_LENGTH)  // >= because of null termination.
+	// Validate username length
+	if (username.length() >= CLIENT_NAME_MAX_LENGTH)
 	{
 		clearLastError();
-		m_errorBuffer << "Username too long (max " << (CLIENT_NAME_MAX_LENGTH - 1) << " characters)";
-		return false;
-	}
-
-	for (auto ch : username)
-	{
-		if (!std::isalnum(ch))  // check alphanumeric
-		{
-			clearLastError();
-			m_errorBuffer << "Username must contain only letters and numbers";
-			return false;
-		}
-	}
-
-	// Generate new RSA key pair
-	delete _cryptoEngine;
-	_cryptoEngine = new RSAPrivateWrapper();
-	const auto publicKey = _cryptoEngine->getPublicKey();
-
-	if (publicKey.size() != PUBLIC_KEY_LENGTH)
-	{
-		clearLastError();
-		m_errorBuffer << "Generated public key has invalid length";
+		m_errorBuffer << "Username exceeds maximum allowed length";
 		return false;
 	}
 
 	// Prepare registration request
-	request.header.payloadSize = sizeof(request.payload);
-	strcpy_s(reinterpret_cast<char*>(request.payload.clientName.name), CLIENT_NAME_MAX_LENGTH, username.c_str());
-	memcpy(request.payload.clientPublicKey.publicKey, publicKey.c_str(), sizeof(request.payload.clientPublicKey.publicKey));
+	RequestRegistrationStruct request;
+	memcpy(request.payload.clientName.name, username.c_str(), username.length());
+	request.payload.clientName.name[username.length()] = '\0';
+	
+	// Get public key from RSA engine
+	const std::string publicKeyStr = _cryptoEngine->getPublicKey();
+	memcpy(request.payload.clientPublicKey.publicKey, publicKeyStr.c_str(), PUBLIC_KEY_LENGTH);
 
-	// Send request and receive response
-	if (!_networkManager->exchangeData(reinterpret_cast<const uint8_t* const>(&request), sizeof(request),
-		reinterpret_cast<uint8_t* const>(&response), sizeof(response)))
+	// Send registration request and receive response
+	uint8_t* payload = nullptr;
+	size_t payloadSize = 0;
+	
+	if (!receiveUnknownPayload(reinterpret_cast<const uint8_t*>(&request), sizeof(request),
+		RESPONSE_REGISTRATION, payload, payloadSize))
+	{
+		return false; // Error message set by receiveUnknownPayload
+	}
+
+	// Parse registration response
+	if (payloadSize != sizeof(ClientIdStruct))
 	{
 		clearLastError();
-		m_errorBuffer << "Communication with server failed: " << _networkManager;
+		m_errorBuffer << "Invalid registration response size";
+		delete[] payload;
 		return false;
 	}
 
-	// Validate response
-	if (!validateHeader(response.header, RESPONSE_REGISTRATION))
-		return false;	  // Error message set by validateHeader
+	// Store assigned client ID
+	memcpy(&m_localUser.id, payload, sizeof(ClientIdStruct));
+	delete[] payload;
 
-	// Store client info
-	m_localUser.id = response.payload;
-	m_localUser.username = username;
-	m_localUser.publicKey = request.payload.clientPublicKey;
-
+	// Store client information to file for persistence
 	if (!storeClientInfo())
 	{
 		clearLastError();
-		m_errorBuffer << "Failed to save client information. Please try registering with a different username.";
+		m_errorBuffer << "Failed to store client information after registration";
 		return false;
 	}
 
@@ -530,289 +618,278 @@ bool MessageEngine::registerClient(const std::string& username)
 }
 
 /**
- * Invoke logic: request client list from server.
+ * @brief Requests updated list of registered clients from server
+ * @return true if request successful, false otherwise
+ * @details Sends clients list request to server and updates local peer registry
+ *          with current client information
  */
 bool MessageEngine::requestClientsList()
 {
+	// Prepare clients list request
 	RequestClientsListStruct request(m_localUser.id);
+
+	// Send request and receive response
 	uint8_t* payload = nullptr;
-	uint8_t* ptr = nullptr;
 	size_t payloadSize = 0;
-	size_t parsedBytes = 0;
-
-	struct
+	
+	if (!receiveUnknownPayload(reinterpret_cast<const uint8_t*>(&request), sizeof(request),
+		RESPONSE_USERS, payload, payloadSize))
 	{
-		ClientIdStruct   clientId;
-		ClientNameStruct clientName;
-	}clientEntry;
-
-	if (!receiveUnknownPayload(reinterpret_cast<uint8_t*>(&request), sizeof(request), RESPONSE_USERS, payload, payloadSize))
-		return false;  // Error message set by receiveUnknownPayload
-
-	if (payloadSize == 0)
-	{
-		delete[] payload;
-		clearLastError();
-		m_errorBuffer << "No registered users found on server";
-		return false;
+		return false; // Error message set by receiveUnknownPayload
 	}
 
-	if (payloadSize % sizeof(clientEntry) != 0)
-	{
-		delete[] payload;
-		clearLastError();
-		m_errorBuffer << "Received corrupted client list data";
-		return false;
-	}
-
-	ptr = payload;
+	// Clear existing peer registry
 	m_peerRegistry.clear();
 
+	// Parse client entries from payload
+	const uint8_t* ptr = payload;
+	size_t parsedBytes = 0;
+	
 	while (parsedBytes < payloadSize)
 	{
+		// Extract client entry structure
+		struct
+		{
+			ClientIdStruct   clientId;
+			ClientNameStruct clientName;
+		}clientEntry;
+		
+		if (parsedBytes + sizeof(clientEntry) > payloadSize)
+		{
+			clearLastError();
+			m_errorBuffer << "Invalid clients list response: incomplete client entry";
+			delete[] payload;
+			return false;
+		}
+
 		memcpy(&clientEntry, ptr, sizeof(clientEntry));
-		ptr += sizeof(clientEntry);
+		
+		// Create client info and add to registry
+		ClientInfo client;
+		client.id = clientEntry.clientId;
+		client.username = reinterpret_cast<const char*>(clientEntry.clientName.name);
+		client.publicKeySet = false;
+		client.symmetricKeySet = false;
+		
+		m_peerRegistry.push_back(client);
+
 		parsedBytes += sizeof(clientEntry);
-
-		// Ensure null termination of client name
-		clientEntry.clientName.name[sizeof(clientEntry.clientName.name) - 1] = '\0';
-
-		m_peerRegistry.push_back({ clientEntry.clientId, reinterpret_cast<char*>(clientEntry.clientName.name) });
+		ptr += sizeof(clientEntry);
 	}
+
 	delete[] payload;
 	return true;
 }
 
-
 /**
- * Invoke logic: request client public key from server.
+ * @brief Requests public key for a specific client
+ * @param[in] username Target client's username
+ * @return true if request successful, false otherwise
+ * @details Sends public key request to server and stores the received key
+ *          in the local peer registry for future secure communication
  */
 bool MessageEngine::requestClientPublicKey(const std::string& username)
 {
-	RequestPublicKeyStruct  request(m_localUser.id);
-	ResponsePublicKeyStruct response;
-	ClientInfo            client;
-
-	// Validate request
-	if (username == m_localUser.username)
-	{
-		clearLastError();
-		m_errorBuffer << "Cannot request your own public key";
-		return false;
-	}
-
+	// Find target client in registry
+	ClientInfo client;
 	if (!findClientByUsername(username, client))
 	{
 		clearLastError();
-		m_errorBuffer << "User '" << username << "' not found. Please refresh the user list.";
+		m_errorBuffer << "User '" << username << "' not found in local registry";
 		return false;
 	}
 
+	// Prepare public key request
+	RequestPublicKeyStruct request(m_localUser.id);
 	request.payload = client.id;
 
-	// Request public key from server
-	if (!_networkManager->exchangeData(reinterpret_cast<const uint8_t* const>(&request), sizeof(request),
-		reinterpret_cast<uint8_t* const>(&response), sizeof(response)))
+	// Send request and receive response
+	uint8_t* payload = nullptr;
+	size_t payloadSize = 0;
+	
+	if (!receiveUnknownPayload(reinterpret_cast<const uint8_t*>(&request), sizeof(request),
+		RESPONSE_PUBLIC_KEY, payload, payloadSize))
+	{
+		return false; // Error message set by receiveUnknownPayload
+	}
+
+	// Parse public key response
+	if (payloadSize != sizeof(ClientIdStruct) + sizeof(PublicKeyStruct))
 	{
 		clearLastError();
-		m_errorBuffer << "Communication with server failed: " << _networkManager;
+		m_errorBuffer << "Invalid public key response size";
+		delete[] payload;
 		return false;
 	}
 
-	// Validate response
-	if (!validateHeader(response.header, RESPONSE_PUBLIC_KEY))
-		return false;  // error message set by validateHeader.
+	// Extract client ID and public key
+	ClientIdStruct responseClientId;
+	PublicKeyStruct responsePublicKey;
+	
+	memcpy(&responseClientId, payload, sizeof(ClientIdStruct));
+	memcpy(&responsePublicKey, payload + sizeof(ClientIdStruct), sizeof(PublicKeyStruct));
 
-	if (request.payload != response.payload.clientId)
+	// Verify client ID matches request
+	if (responseClientId != client.id)
 	{
 		clearLastError();
-		m_errorBuffer << "Server returned wrong client ID";
+		m_errorBuffer << "Public key response contains unexpected client ID";
+		delete[] payload;
 		return false;
 	}
 
-	// Store public key
-	if (!setClientPublicKey(response.payload.clientId, response.payload.clientPublicKey))
+	// Store public key in peer registry
+	if (!setClientPublicKey(client.id, responsePublicKey))
 	{
 		clearLastError();
-		m_errorBuffer << "Failed to store public key for " << username << ". Please refresh user list.";
+		m_errorBuffer << "Failed to store public key for " << username;
+		delete[] payload;
 		return false;
 	}
+
+	delete[] payload;
 	return true;
 }
 
-
 /**
- * Invoke logic: request pending messages from server.
+ * @brief Retrieves and decrypts pending messages from server
+ * @param[out] messages Vector to store decrypted message data
+ * @return true if retrieval successful, false otherwise
+ * @details Requests pending messages from server, decrypts them using appropriate
+ *          keys, and populates the messages vector with readable content
  */
 bool MessageEngine::retrievePendingMessages(std::vector<MessageData>& messages)
 {
-	RequestMessagesStruct  request(m_localUser.id);
-	uint8_t* payload = nullptr;
-	uint8_t* ptr = nullptr;
-	size_t   payloadSize = 0;
-	size_t   parsedBytes = 0;
-
+	// Clear output vector
 	messages.clear();
 
-	if (!receiveUnknownPayload(reinterpret_cast<uint8_t*>(&request), sizeof(request), RESPONSE_PENDING_MSG, payload, payloadSize))
-		return false; // Error message set by receiveUnknownPayload
+	// Prepare pending messages request
+	RequestMessagesStruct request(m_localUser.id);
 
+	// Send request and receive response
+	uint8_t* payload = nullptr;
+	size_t payloadSize = 0;
+	
+	if (!receiveUnknownPayload(reinterpret_cast<const uint8_t*>(&request), sizeof(request),
+		RESPONSE_PENDING_MSG, payload, payloadSize))
+	{
+		return false; // Error message set by receiveUnknownPayload
+	}
+
+	// Handle empty response (no pending messages)
 	if (payloadSize == 0)
 	{
 		delete[] payload;
-		clearLastError();
-		m_errorBuffer << "No pending messages";
-		return false;
-	}
-	if (payload == nullptr || payloadSize < sizeof(PendingMessageStruct))
-	{
-		delete[] payload;
-		clearLastError();
-		m_errorBuffer << "Invalid response payload";
-		return false;
+		return true;
 	}
 
-	clearLastError();
-	ptr = payload;
+	// Parse pending messages from payload
+	const uint8_t* ptr = payload;
+	size_t parsedBytes = 0;
+	
 	while (parsedBytes < payloadSize)
 	{
-		ClientInfo      client;
-		MessageData     message;
-		const size_t msgHeaderSize = sizeof(PendingMessageStruct);
-		const auto   header = reinterpret_cast<PendingMessageStruct*>(ptr);
-		const size_t remainingBytes = payloadSize - parsedBytes;
-
-		// Validate message structure
-		if ((msgHeaderSize > remainingBytes) || (msgHeaderSize + header->messageSize) > remainingBytes)
+		// Extract pending message header
+		PendingMessageStruct* header = reinterpret_cast<PendingMessageStruct*>(const_cast<uint8_t*>(ptr));
+		
+		if (parsedBytes + sizeof(PendingMessageStruct) > payloadSize)
 		{
-			delete[] payload;
 			clearLastError();
-			m_errorBuffer << "Corrupted message data detected";
+			m_errorBuffer << "Invalid pending messages response: incomplete header";
+			delete[] payload;
 			return false;
 		}
 
-		//Resolve username
-		if (findClientById(header->clientId, client))
+		// Validate message size
+		if (parsedBytes + sizeof(PendingMessageStruct) + header->messageSize > payloadSize)
 		{
-			message.username = client.username;
-		}
-		else
-		{
-			// Handle unknown client ID
-			message.username = "Unknown client: ";
-			message.username.append(StringUtility::hex(header->clientId.uuid, sizeof(header->clientId.uuid)));
+			clearLastError();
+			m_errorBuffer << "Invalid pending messages response: message content exceeds payload";
+			delete[] payload;
+			return false;
 		}
 
-		ptr += msgHeaderSize;
-		parsedBytes += msgHeaderSize;
+		// Find source client information
+		ClientInfo sourceClient;
+		if (!findClientById(header->clientId, sourceClient))
+		{
+			clearLastError();
+			m_errorBuffer << "Unknown source client for message #" << header->messageId;
+			delete[] payload;
+			return false;
+		}
 
-		// Process message based on type
+		// Create message data structure
+		MessageData message;
+		message.username = sourceClient.username;
+		message.content = "";
+
+		// Process message content based on type
+		bool addToQueue = true;
+		ptr += sizeof(PendingMessageStruct);
+		parsedBytes += sizeof(PendingMessageStruct);
+
 		switch (header->messageType)
 		{
 		case MSG_SYMMETRIC_KEY_REQUEST:
 		{
-			message.content = "Request for symmetric key";
-			messages.push_back(message);
+			// Handle symmetric key request (empty content)
+			message.content = "Symmetric key request";
 			break;
 		}
-
 		case MSG_SYMMETRIC_KEY_SEND:
 		{
-			if (header->messageSize == 0)
+			// Handle symmetric key exchange
+			if (!sourceClient.publicKeySet)
 			{
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Invalid symmetric key (empty content)" << std::endl;
-				parsedBytes += header->messageSize;
-				ptr += header->messageSize;
-				continue;
+				m_errorBuffer << "\tMessage #" << header->messageId << ": Public key not available" << std::endl;
+				addToQueue = false;
+				break;
 			}
 
-			std::string key;
-			try
-			{
-				key = _cryptoEngine->decrypt(ptr, header->messageSize);
-			}
-			catch (...)
-			{
-
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to decrypt symmetric key" << std::endl;
-				parsedBytes += header->messageSize;
-				ptr += header->messageSize;
-				continue;
-			}
-
-			const size_t keySize = key.size();
-			if (keySize != SYMMETRIC_KEY_LENGTH)  // invalid symmetric key
-			{
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Invalid symmetric key length (" << key.size() << ")" << std::endl;
-			}
-			else
-			{
-				memcpy(client.symmetricKey.symmetricKey, key.c_str(), keySize);
-				if (setClientSymmetricKey(header->clientId, client.symmetricKey))
-				{
-					message.content = "Symmetric key received";
-					messages.push_back(message);
-				}
-				else
-				{
-					m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to store symmetric key for " << message.username << std::endl;
-				}
-			}
-			parsedBytes += header->messageSize;
-			ptr += header->messageSize;
+			// Decrypt symmetric key with our private key
+			const std::string decryptedKey = _cryptoEngine->decrypt(ptr, header->messageSize);
+			
+			// Store symmetric key for future communication
+			SymmetricKeyStruct symKey;
+			memcpy(symKey.symmetricKey, decryptedKey.c_str(), SYMMETRIC_KEY_LENGTH);
+			setClientSymmetricKey(header->clientId, symKey);
+			
+			message.content = "Symmetric key received";
 			break;
 		}
-
 		case MSG_TEXT:
 		case MSG_FILE:
 		{
-			if (header->messageSize == 0)
+			// Handle text messages and file transfers
+			if (!sourceClient.symmetricKeySet)
 			{
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Empty message content" << std::endl;
-				parsedBytes += header->messageSize;
-				ptr += header->messageSize;
-				continue;
+				m_errorBuffer << "\tMessage #" << header->messageId << ": Symmetric key not available" << std::endl;
+				addToQueue = false;
+				break;
 			}
 
-			message.content = "Cannot decrypt message"; // Default error message
-			bool addToQueue = true;
+			// Decrypt message content with symmetric key
+			AESWrapper aes(sourceClient.symmetricKey);
+			const std::string decryptedData = aes.decrypt(ptr, header->messageSize);
 
-			if (client.symmetricKeySet)
+			if (header->messageType == MSG_FILE)
 			{
-				AESWrapper aes(client.symmetricKey);
-				std::string decryptedData;
+				// Save file content to temporary directory
+				std::stringstream filepath;
+				filepath << _configManager->getTemporaryDirectory() << "\\MessageU\\" << message.username << "_" << StringUtility::getTimestamp();
+				message.content = filepath.str();
 
-				try
+				if (!_configManager->writeFileComplete(message.content, decryptedData))
 				{
-					decryptedData = aes.decrypt(ptr, header->messageSize);
-				}
-				catch (...) {} // Keep default error message
-
-				if (header->messageType == MSG_FILE)
-				{
-					// Set filename with timestamp.
-					std::stringstream filepath;
-					filepath << _configManager->getTemporaryDirectory() << "\\MessageU\\" << message.username << "_" << StringUtility::getTimestamp();
-					message.content = filepath.str();
-
-					if (!_configManager->writeFileComplete(message.content, decryptedData))
-					{
-						m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to save file" << std::endl;
-						addToQueue = false;
-					}
-				}
-				else  // Message text
-				{
-					message.content = decryptedData;
+					m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to save file" << std::endl;
+					addToQueue = false;
 				}
 			}
-
-			if (addToQueue) {
-				messages.push_back(message);
+			else  // Message text
+			{
+				message.content = decryptedData;
 			}
-
-			parsedBytes += header->messageSize;
-			ptr += header->messageSize;
 			break;
 		}
 		default:
@@ -822,14 +899,28 @@ bool MessageEngine::retrievePendingMessages(std::vector<MessageData>& messages)
 		}
 		}
 
+		// Add message to output vector if processing was successful
+		if (addToQueue) {
+			messages.push_back(message);
+		}
+
+		parsedBytes += header->messageSize;
+		ptr += header->messageSize;
 	}
 
 	delete[] payload;
 	return true;
 }
 
-
-// Send a message to another client via the server.
+/**
+ * @brief Sends encrypted message to specified user
+ * @param[in] username Target recipient's username
+ * @param[in] type Type of message (text, file, key exchange)
+ * @param[in] data Optional message content (empty for key requests)
+ * @return true if message sent successfully, false otherwise
+ * @details Handles complete message encryption, transmission, and confirmation
+ *          including automatic key exchange if necessary
+ */
 bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEnum type, const std::string& data)
 {
 	ClientInfo              client; // client to send to
@@ -837,6 +928,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 	ResponseMessageSentStruct response;
 	uint8_t* content = nullptr;
 
+	// Message type names for error reporting
 	std::map<const MessageTypeEnum, const std::string> messageTypeNames = {
 		{MSG_SYMMETRIC_KEY_REQUEST, "symmetric key request"},
 		{MSG_SYMMETRIC_KEY_SEND,    "symmetric key"},
@@ -844,7 +936,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		{MSG_FILE,                  "file"}
 	};
 
-	// Validate recipient
+	// Validate recipient (prevent self-messaging)
 	if (username == m_localUser.username)
 	{
 		clearLastError();
@@ -852,6 +944,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		return false;
 	}
 
+	// Find target client in registry
 	if (!findClientByUsername(username, client))
 	{
 		clearLastError();
@@ -860,8 +953,10 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 	}
 	request.payloadHeader.clientId = client.id;
 
+	// Handle symmetric key exchange
 	if (type == MSG_SYMMETRIC_KEY_SEND)
 	{
+		// Verify public key is available
 		if (!client.publicKeySet)
 		{
 			clearLastError();
@@ -869,11 +964,12 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 			return false;
 		}
 
-		// Generate and store symmetric key
+		// Generate new symmetric key for this session
 		AESWrapper    aes;
 		SymmetricKeyStruct symKey;
 		symKey = aes.getKey();
 
+		// Store symmetric key locally
 		if (!setClientSymmetricKey(request.payloadHeader.clientId, symKey))
 		{
 			clearLastError();
@@ -884,7 +980,6 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		// Encrypt symmetric key with recipient's public key
 		RSAPublicWrapper rsa(client.publicKey);
 		const std::string encryptedKey = rsa.encrypt(symKey.symmetricKey, sizeof(symKey.symmetricKey));
-
 
 		// Validate size for transmission
 		if (encryptedKey.size() > std::numeric_limits<csize_t>::max()) {
@@ -906,6 +1001,8 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 			m_errorBuffer << "No content provided for message";
 			return false;
 		}
+		
+		// Verify symmetric key is available
 		if (!client.symmetricKeySet)
 		{
 			clearLastError();
@@ -924,7 +1021,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 			return false;
 		}
 
-		// Encrypt content
+		// Encrypt content with symmetric key
 		AESWrapper aes(client.symmetricKey);
 		const std::string encrypted = (type == MSG_TEXT) 
 			? aes.encrypt(data) 
@@ -932,7 +1029,6 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 
 		// Clean up file data if needed
 		delete[] fileData;
-
 
 		// Validate size for transmission
 		if (encrypted.size() > std::numeric_limits<csize_t>::max()) {
@@ -946,18 +1042,20 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		memcpy(content, encrypted.c_str(), request.payloadHeader.contentSize);
 	}
 
-	// prepare message to send
+	// Prepare complete message packet
 	size_t msgSize;
 	uint8_t* msgPacket;
 	request.header.payloadSize = sizeof(request.payloadHeader) + request.payloadHeader.contentSize;
 
 	if (content == nullptr)
 	{
+		// No content (e.g., symmetric key request)
 		msgPacket = reinterpret_cast<uint8_t*>(&request);
 		msgSize = sizeof(request);
 	}
 	else
 	{
+		// Allocate memory for request + content
 		msgPacket = new uint8_t[sizeof(request) + request.payloadHeader.contentSize];
 		memcpy(msgPacket, &request, sizeof(request));
 		memcpy(msgPacket + sizeof(request), content, request.payloadHeader.contentSize);
@@ -965,11 +1063,13 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 	}
 
 	// Send message and receive confirmation
-	bool success = _networkManager->exchangeData(msgPacket,msgSize,reinterpret_cast<uint8_t* const>(&response),sizeof(response));
+	bool success = _networkManager->exchangeData(msgPacket, msgSize, reinterpret_cast<uint8_t* const>(&response), sizeof(response));
 
 	// Clean up resources
 	delete[] content;
-	if (msgPacket != reinterpret_cast<uint8_t*>(&request)) {delete[] msgPacket;}
+	if (msgPacket != reinterpret_cast<uint8_t*>(&request)) {
+		delete[] msgPacket;
+	}
 
 	if (!success) {
 		clearLastError();
@@ -977,10 +1077,11 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		return false;
 	}
 
-	// Validate response
+	// Validate response header
 	if (!validateHeader(response.header, RESPONSE_MSG_SENT))
-		return false;  // Error message set by validateHeade
+		return false;  // Error message set by validateHeader
 
+	// Verify response contains correct client ID
 	if (request.payloadHeader.clientId != response.payload.clientId)
 	{
 		clearLastError();
