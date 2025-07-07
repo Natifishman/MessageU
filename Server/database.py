@@ -1,81 +1,25 @@
 """
-MessageU Server - Database Management Module
-============================================
-
 Author: Natanel Maor Fishman
-Version: 2.0
-Date: 2025
 
-Database management module for the MessageU messaging platform.
+database.py: Database management module for the MessageU messaging platform.
 Implements persistence, user account management, and message storage with
 comprehensive data validation and error handling.
 
 This module provides an abstraction layer over the SQLite database,
 offering a clean interface for storing and retrieving user and message data.
-Features include client registration, message storage, and secure data access.
 """
-
-# ================================
-# Standard Library Imports
-# ================================
 
 import logging
 import sqlite3
+import protocol
 from typing import List, Tuple, Optional, Any, Union
 from contextlib import contextmanager
-
-# ================================
-# Application Imports
-# ================================
-
-import protocol
-
-# ================================
-# Constants
-# ================================
-
-# Table names
-CLIENTS_TABLE = "clients"
-MESSAGES_TABLE = "messages"
-
-# SQL statements for table creation
-CREATE_CLIENTS_TABLE = f"""
-    CREATE TABLE IF NOT EXISTS {CLIENTS_TABLE} (
-        ID BLOB(16) NOT NULL PRIMARY KEY,
-        Name BLOB(255) NOT NULL,
-        PublicKey BLOB(160) NOT NULL,
-        LastSeen TEXT NOT NULL
-    );
-"""
-
-CREATE_MESSAGES_TABLE = f"""
-    CREATE TABLE IF NOT EXISTS {MESSAGES_TABLE} (
-        ID INTEGER PRIMARY KEY AUTOINCREMENT,
-        ToClient BLOB(16) NOT NULL,
-        FromClient BLOB(16) NOT NULL,
-        Type INTEGER NOT NULL,
-        Content BLOB,
-        FOREIGN KEY(ToClient) REFERENCES {CLIENTS_TABLE}(ID),
-        FOREIGN KEY(FromClient) REFERENCES {CLIENTS_TABLE}(ID)
-    );
-"""
-
-# ================================
-# Data Model Classes
-# ================================
 
 
 class Client:
     """
     Represents a registered client in the MessageU system.
-    
-    Contains identification information and authentication data including
-    unique client ID, username, public key, and last activity timestamp.
-    
-    Features:
-        - Data validation according to protocol specifications
-        - Flexible input handling (string/bytes)
-        - Comprehensive error checking
+    Contains identification information and authentication data.
     """
 
     def __init__(
@@ -89,13 +33,7 @@ class Client:
             cname: Client's username (ASCII string, max 255 bytes)
             public_key: Client's public RSA key (160 bytes)
             last_seen: Timestamp of client's last interaction with server
-            
-        Details:
-            Converts client ID from hex string to bytes if necessary.
-            Handles username as either string or bytes format.
-            Validates all input parameters according to protocol specifications.
         """
-        # Convert client ID to bytes if provided as hex string
         self.ID = bytes.fromhex(cid) if isinstance(cid, str) else cid
 
         # Handle name as either string or bytes
@@ -113,13 +51,6 @@ class Client:
 
         Returns:
             True if all attributes are valid, False otherwise
-            
-        Details:
-            Performs comprehensive validation of all client attributes:
-            - Client ID length (16 bytes)
-            - Username length (max 255 bytes)
-            - Public key length (160 bytes)
-            - Last seen timestamp presence
         """
         # Check ID
         if not self.ID or len(self.ID) != protocol.CLIENT_ID_LENGTH:
@@ -151,15 +82,7 @@ class Client:
 class Message:
     """
     Represents a message exchanged between clients in the MessageU system.
-    
-    Contains message metadata and encrypted content including sender/recipient
-    information, message type, and encrypted payload.
-    
-    Features:
-        - Message type validation
-        - Client ID validation
-        - Flexible content handling
-        - Database integration support
+    Contains message metadata and encrypted content.
     """
 
     def __init__(
@@ -173,10 +96,6 @@ class Message:
             from_client: Sender's unique ID (16 bytes)
             mtype: Message type identifier (1 byte)
             content: Encrypted message content (variable length)
-            
-        Details:
-            Creates a new message record with validated parameters.
-            Message ID is assigned by the database upon storage.
         """
         self.ID = 0  # Message ID, assigned by database
         self.ToClient = to_client
@@ -190,12 +109,6 @@ class Message:
 
         Returns:
             True if all attributes are valid, False otherwise
-            
-        Details:
-            Performs comprehensive validation of all message attributes:
-            - Recipient and sender ID lengths (16 bytes each)
-            - Message type range validation
-            - Content format validation
         """
         # Check ToClient
         if not self.ToClient or len(self.ToClient) != protocol.CLIENT_ID_LENGTH:
@@ -223,25 +136,36 @@ class Message:
         return True
 
 
-# ================================
-# Database Management Class
-# ================================
-
-
 class Database:
     """
     Database management class for the MessageU server.
-    
-    Provides methods for storing and retrieving clients and messages with
-    comprehensive error handling and data validation. Uses SQLite as the
-    underlying database engine with proper connection management.
-    
-    Features:
-        - Client registration and management
-        - Message storage and retrieval
-        - Data validation and integrity checks
-        - Connection pooling and error handling
-        - Foreign key relationships
+    Provides methods for storing and retrieving clients and messages.
+    """
+
+    # Table names
+    CLIENTS_TABLE = "clients"
+    MESSAGES_TABLE = "messages"
+
+    # SQL statements
+    CREATE_CLIENTS_TABLE = f"""
+        CREATE TABLE IF NOT EXISTS {CLIENTS_TABLE} (
+            ID BLOB(16) NOT NULL PRIMARY KEY,
+            Name BLOB(255) NOT NULL,
+            PublicKey BLOB(160) NOT NULL,
+            LastSeen TEXT NOT NULL
+        );
+    """
+
+    CREATE_MESSAGES_TABLE = f"""
+        CREATE TABLE IF NOT EXISTS {MESSAGES_TABLE} (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            ToClient BLOB(16) NOT NULL,
+            FromClient BLOB(16) NOT NULL,
+            Type INTEGER NOT NULL,
+            Content BLOB,
+            FOREIGN KEY(ToClient) REFERENCES {CLIENTS_TABLE}(ID),
+            FOREIGN KEY(FromClient) REFERENCES {CLIENTS_TABLE}(ID)
+        );
     """
 
     def __init__(self, db_path: str):
@@ -250,35 +174,17 @@ class Database:
 
         Args:
             db_path: Path to SQLite database file
-            
-        Details:
-            Sets up database connection parameters. The actual database
-            connection is established when needed using the context manager.
         """
         self.db_path = db_path
-
-    # ================================
-    # Connection Management
-    # ================================
 
     @contextmanager
     def get_connection(self):
         """
         Context manager for database connections.
-        
         Ensures connections are properly closed even if exceptions occur.
-        Provides automatic cleanup and error handling for database operations.
-        
+
         Yields:
             SQLite connection object
-            
-        Raises:
-            sqlite3.Error: If connection cannot be established
-            
-        Example:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM clients")
         """
         conn = None
         try:
@@ -292,293 +198,222 @@ class Database:
             if conn:
                 conn.close()
 
-    # ================================
-    # Database Initialization
-    # ================================
-
     def initialize(self) -> bool:
         """
-        Initialize database tables and schema.
-        
+        Initialize database schema by creating necessary tables.
+
         Returns:
-            True if initialization successful, False otherwise
-            
-        Details:
-            Creates the necessary database tables if they don't exist.
-            Sets up proper schema with foreign key relationships and
-            appropriate data types for secure message storage.
+            True if initialization was successful, False otherwise
         """
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Create clients table
-                cursor.execute(CREATE_CLIENTS_TABLE)
-                
-                # Create messages table
-                cursor.execute(CREATE_MESSAGES_TABLE)
-                
-                conn.commit()
-                logging.info("Database initialized successfully")
-                return True
-                
-        except sqlite3.Error as e:
-            logging.error(f"Database initialization failed: {str(e)}")
-            return False
+                # Create tables if they don't exist
+                conn.executescript(self.CREATE_CLIENTS_TABLE)
+                conn.executescript(self.CREATE_MESSAGES_TABLE)
 
-    # ================================
-    # Client Management Methods
-    # ================================
+                # Create indexes for performance
+                conn.executescript(
+                    f"CREATE INDEX IF NOT EXISTS idx_messages_to ON {self.MESSAGES_TABLE}(ToClient);"
+                )
+                conn.executescript(
+                    f"CREATE INDEX IF NOT EXISTS idx_clients_name ON {self.CLIENTS_TABLE}(Name);"
+                )
+
+            logging.info("Database initialized successfully")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to initialize database: {str(e)}")
+            return False
 
     def client_username_exists(self, username: str) -> bool:
         """
         Check if a username already exists in the database.
-        
+
         Args:
-            username: Username to check
-            
+            username: Client username to check
+
         Returns:
             True if username exists, False otherwise
-            
-        Details:
-            Performs case-sensitive username lookup in the database.
-            Used during client registration to prevent duplicate usernames.
         """
         try:
+            username_bytes = (
+                username.encode("utf-8") if isinstance(username, str) else username
+            )
+
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {CLIENTS_TABLE} WHERE Name = ?",
-                    (username.encode("utf-8"),)
+                    f"SELECT COUNT(*) FROM {self.CLIENTS_TABLE} WHERE Name = ?",
+                    (username_bytes,),
                 )
                 count = cursor.fetchone()[0]
                 return count > 0
-                
-        except sqlite3.Error as e:
+        except Exception as e:
             logging.error(f"Error checking username existence: {str(e)}")
-            return False
+            raise
 
     def client_id_exists(self, client_id: bytes) -> bool:
         """
-        Check if a client ID exists in the database.
-        
+        Check if a client ID already exists in the database.
+
         Args:
             client_id: Client ID to check
-            
+
         Returns:
             True if client ID exists, False otherwise
-            
-        Details:
-            Validates client ID format and checks existence in database.
-            Used for authentication and message routing validation.
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {CLIENTS_TABLE} WHERE ID = ?",
-                    (client_id,)
+                    f"SELECT COUNT(*) FROM {self.CLIENTS_TABLE} WHERE ID = ?",
+                    (client_id,),
                 )
                 count = cursor.fetchone()[0]
                 return count > 0
-                
-        except sqlite3.Error as e:
+        except Exception as e:
             logging.error(f"Error checking client ID existence: {str(e)}")
-            return False
+            raise
 
     def store_client(self, client: Client) -> bool:
         """
         Store a new client in the database.
-        
+
         Args:
             client: Client object to store
-            
+
         Returns:
-            True if storage successful, False otherwise
-            
-        Details:
-            Validates client data and stores it in the database.
-            Performs duplicate checking and data integrity validation.
+            True if client was stored successfully, False otherwise
         """
-        if not client.validate():
-            logging.error("Invalid client data")
+        if not isinstance(client, Client) or not client.validate():
+            logging.error("Invalid client object")
             return False
 
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"INSERT INTO {CLIENTS_TABLE} (ID, Name, PublicKey, LastSeen) VALUES (?, ?, ?, ?)",
-                    (client.ID, client.Name, client.PublicKey, client.LastSeen)
+                    f"INSERT INTO {self.CLIENTS_TABLE} VALUES (?, ?, ?, ?)",
+                    (client.ID, client.Name, client.PublicKey, client.LastSeen),
                 )
                 conn.commit()
-                logging.info(f"Client stored successfully: {client.Name.decode('utf-8', errors='ignore')}")
-                return True
-                
+                return cursor.rowcount > 0
         except sqlite3.IntegrityError:
-            logging.error("Client ID already exists")
+            logging.error("Client already exists or constraint violation")
             return False
-        except sqlite3.Error as e:
+        except Exception as e:
             logging.error(f"Error storing client: {str(e)}")
             return False
-
-    # ================================
-    # Message Management Methods
-    # ================================
 
     def store_message(self, msg: Message) -> Optional[int]:
         """
         Store a new message in the database.
-        
+
         Args:
             msg: Message object to store
-            
+
         Returns:
-            Message ID if storage successful, None otherwise
-            
-        Details:
-            Validates message data and stores it in the database.
-            Returns the assigned message ID for tracking purposes.
+            Message ID if stored successfully, None otherwise
         """
-        if not msg.validate():
-            logging.error("Invalid message data")
+        if not isinstance(msg, Message) or not msg.validate():
+            logging.error("Invalid message object")
             return None
 
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"INSERT INTO {MESSAGES_TABLE} (ToClient, FromClient, Type, Content) VALUES (?, ?, ?, ?)",
-                    (msg.ToClient, msg.FromClient, msg.Type, msg.Content)
+                    f"INSERT INTO {self.MESSAGES_TABLE} (ToClient, FromClient, Type, Content) VALUES (?, ?, ?, ?)",
+                    (msg.ToClient, msg.FromClient, msg.Type, msg.Content),
                 )
-                message_id = cursor.lastrowid
                 conn.commit()
-                logging.info(f"Message stored successfully with ID: {message_id}")
-                return message_id
-                
-        except sqlite3.Error as e:
+                return cursor.lastrowid
+        except Exception as e:
             logging.error(f"Error storing message: {str(e)}")
             return None
 
     def remove_message(self, msg_id: int) -> bool:
         """
-        Remove a message from the database.
-        
+        Remove a message from the database by ID.
+
         Args:
             msg_id: ID of message to remove
-            
+
         Returns:
-            True if removal successful, False otherwise
-            
-        Details:
-            Deletes a specific message by ID. Used after successful
-            message delivery to clean up the pending messages queue.
+            True if message was removed successfully, False otherwise
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"DELETE FROM {MESSAGES_TABLE} WHERE ID = ?",
-                    (msg_id,)
+                    f"DELETE FROM {self.MESSAGES_TABLE} WHERE ID = ?", (msg_id,)
                 )
                 conn.commit()
-                
-                if cursor.rowcount > 0:
-                    logging.info(f"Message {msg_id} removed successfully")
-                    return True
-                else:
-                    logging.warning(f"Message {msg_id} not found")
-                    return False
-                    
-        except sqlite3.Error as e:
-            logging.error(f"Error removing message: {str(e)}")
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error removing message {msg_id}: {str(e)}")
             return False
-
-    # ================================
-    # Data Retrieval Methods
-    # ================================
 
     def set_last_seen(self, client_id: bytes, timestamp: str) -> bool:
         """
-        Update client's last seen timestamp.
-        
+        Update the last seen timestamp for a client.
+
         Args:
-            client_id: Client ID to update
-            timestamp: New timestamp string
-            
+            client_id: ID of client to update
+            timestamp: New timestamp value
+
         Returns:
-            True if update successful, False otherwise
-            
-        Details:
-            Updates the last activity timestamp for a client.
-            Used to track client activity and connection status.
+            True if update was successful, False otherwise
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"UPDATE {CLIENTS_TABLE} SET LastSeen = ? WHERE ID = ?",
-                    (timestamp, client_id)
+                    f"UPDATE {self.CLIENTS_TABLE} SET LastSeen = ? WHERE ID = ?",
+                    (timestamp, client_id),
                 )
                 conn.commit()
-                
-                if cursor.rowcount > 0:
-                    logging.debug(f"Updated last seen for client {client_id.hex()}")
-                    return True
-                else:
-                    logging.warning(f"Client {client_id.hex()} not found for last seen update")
-                    return False
-                    
-        except sqlite3.Error as e:
-            logging.error(f"Error updating last seen: {str(e)}")
+                return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"Error updating last seen timestamp: {str(e)}")
             return False
 
     def get_clients_list(self) -> List[Tuple[bytes, bytes]]:
         """
-        Get list of all registered clients.
-        
+        Retrieve a list of all registered clients.
+
         Returns:
-            List of tuples containing (client_id, username) pairs
-            
-        Details:
-            Retrieves all registered clients from the database.
-            Returns client IDs and usernames for client discovery.
+            List of tuples containing client ID and name
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"SELECT ID, Name FROM {CLIENTS_TABLE}")
+                cursor.execute(f"SELECT ID, Name FROM {self.CLIENTS_TABLE}")
                 return cursor.fetchall()
-                
-        except sqlite3.Error as e:
+        except Exception as e:
             logging.error(f"Error retrieving clients list: {str(e)}")
             return []
 
     def get_client_public_key(self, client_id: bytes) -> Optional[bytes]:
         """
-        Get public key for a specific client.
-        
+        Retrieve the public key for a specific client.
+
         Args:
-            client_id: Client ID to retrieve key for
-            
+            client_id: ID of client to retrieve key for
+
         Returns:
             Public key bytes if found, None otherwise
-            
-        Details:
-            Retrieves the public key for secure communication setup.
-            Used for message encryption and key exchange.
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT PublicKey FROM {CLIENTS_TABLE} WHERE ID = ?",
-                    (client_id,)
+                    f"SELECT PublicKey FROM {self.CLIENTS_TABLE} WHERE ID = ?",
+                    (client_id,),
                 )
                 result = cursor.fetchone()
                 return result[0] if result else None
-                
-        except sqlite3.Error as e:
+        except Exception as e:
             logging.error(f"Error retrieving public key: {str(e)}")
             return None
 
@@ -586,90 +421,73 @@ class Database:
         self, client_id: bytes
     ) -> List[Tuple[int, bytes, int, bytes]]:
         """
-        Get pending messages for a specific client.
-        
+        Retrieve all pending messages for a specific client.
+
         Args:
-            client_id: Client ID to retrieve messages for
-            
+            client_id: ID of client to retrieve messages for
+
         Returns:
-            List of tuples containing (message_id, sender_id, message_type, content)
-            
-        Details:
-            Retrieves all pending messages for a client.
-            Messages are returned in order of receipt for processing.
+            List of tuples containing message ID, sender ID, message type, and content
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT ID, FromClient, Type, Content FROM {MESSAGES_TABLE} WHERE ToClient = ?",
-                    (client_id,)
+                    f"SELECT ID, FromClient, Type, Content FROM {self.MESSAGES_TABLE} WHERE ToClient = ?",
+                    (client_id,),
                 )
                 return cursor.fetchall()
-                
-        except sqlite3.Error as e:
+        except Exception as e:
             logging.error(f"Error retrieving pending messages: {str(e)}")
             return []
 
     def get_client_by_id(self, client_id: bytes) -> Optional[Client]:
         """
-        Get complete client information by ID.
-        
+        Retrieve complete client information by ID.
+
         Args:
-            client_id: Client ID to retrieve
-            
+            client_id: ID of client to retrieve
+
         Returns:
             Client object if found, None otherwise
-            
-        Details:
-            Retrieves complete client information including all fields.
-            Used for client validation and information retrieval.
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT ID, Name, PublicKey, LastSeen FROM {CLIENTS_TABLE} WHERE ID = ?",
-                    (client_id,)
+                    f"SELECT ID, Name, PublicKey, LastSeen FROM {self.CLIENTS_TABLE} WHERE ID = ?",
+                    (client_id,),
                 )
                 result = cursor.fetchone()
-                
-                if result:
-                    return Client(
-                        result[0].hex(),  # ID as hex string
-                        result[1],        # Name
-                        result[2],        # PublicKey
-                        result[3].decode('utf-8') if isinstance(result[3], bytes) else result[3]  # LastSeen
-                    )
-                return None
-                
-        except sqlite3.Error as e:
-            logging.error(f"Error retrieving client: {str(e)}")
+                if not result:
+                    return None
+
+                # Convert ID from bytes to hex string for Client constructor
+                id_hex = result[0].hex()
+                return Client(id_hex, result[1], result[2], result[3])
+        except Exception as e:
+            logging.error(f"Error retrieving client by ID: {str(e)}")
             return None
 
     def get_message_count(self, client_id: bytes) -> int:
         """
-        Get count of pending messages for a client.
-        
+        Count pending messages for a specific client.
+
         Args:
-            client_id: Client ID to count messages for
-            
+            client_id: ID of client to count messages for
+
         Returns:
             Number of pending messages
-            
-        Details:
-            Returns the count of pending messages for efficient
-            message queue management and status reporting.
         """
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {MESSAGES_TABLE} WHERE ToClient = ?",
-                    (client_id,)
+                    f"SELECT COUNT(*) FROM {self.MESSAGES_TABLE} WHERE ToClient = ?",
+                    (client_id,),
                 )
-                return cursor.fetchone()[0]
-                
-        except sqlite3.Error as e:
-            logging.error(f"Error counting messages: {str(e)}")
+                result = cursor.fetchone()
+                return result[0] if result else 0
+        except Exception as e:
+            logging.error(f"Error counting pending messages: {str(e)}")
             return 0
