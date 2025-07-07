@@ -14,7 +14,7 @@
 #include <limits>
 
 
-//Stream operator for MessageType enumeration
+ //Stream operator for MessageType enumeration
 std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 {
 	// Cast enumeration to underlying type for serialization
@@ -926,8 +926,8 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 
 		// Encrypt content
 		AESWrapper aes(client.symmetricKey);
-		const std::string encrypted = (type == MSG_TEXT) 
-			? aes.encrypt(data) 
+		const std::string encrypted = (type == MSG_TEXT)
+			? aes.encrypt(data)
 			: aes.encrypt(fileData, fileSize);
 
 		// Clean up file data if needed
@@ -965,11 +965,11 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 	}
 
 	// Send message and receive confirmation
-	bool success = _networkManager->exchangeData(msgPacket,msgSize,reinterpret_cast<uint8_t* const>(&response),sizeof(response));
+	bool success = _networkManager->exchangeData(msgPacket, msgSize, reinterpret_cast<uint8_t* const>(&response), sizeof(response));
 
 	// Clean up resources
 	delete[] content;
-	if (msgPacket != reinterpret_cast<uint8_t*>(&request)) {delete[] msgPacket;}
+	if (msgPacket != reinterpret_cast<uint8_t*>(&request)) { delete[] msgPacket; }
 
 	if (!success) {
 		clearLastError();
