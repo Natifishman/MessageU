@@ -1,22 +1,24 @@
 /**
  * @file        RSAWrapper.cpp
  * @author      Natanel Maor Fishman
- * @brief       Advanced RSA asymmetric encryption wrapper implementation
- * @details     Implements RSA-1024 encryption/decryption using OAEP padding with SHA-1
- *              for secure key exchange and digital signatures
- * @version     1.0
- * @date        2024
+ * @brief       Implementation of RSA asymmetric encryption wrapper.
+ * @details     Provides all cryptographic operations for RSA key management, encryption, and decryption.
+ * @date        2025
  */
 
 #include "RSAWrapper.h"
 #include "protocol.h"
 
- /**
-  * @brief       Constructor with existing public key
-  * @param[in]   publicKeyData    Pre-generated public key structure
-  * @details     Loads an existing public key from the provided structure
-  *              for subsequent encryption operations
-  */
+// ================================
+// RSAWrapper.cpp - Implementation
+// ================================
+
+/**
+ * @brief       Constructor with existing public key
+ * @param[in]   publicKeyData    Pre-generated public key structure
+ * @details     Loads an existing public key from the provided structure
+ *              for subsequent encryption operations
+ */
 RSAPublicWrapper::RSAPublicWrapper(const PublicKeyStruct& publicKeyData)
 {
 	// Load the public key from the provided key structure

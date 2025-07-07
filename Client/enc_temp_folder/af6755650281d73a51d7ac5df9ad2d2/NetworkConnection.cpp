@@ -1,4 +1,21 @@
 /**
+ * @author	Natanel Maor Fishman
+ * @file	NetworkConnection.cpp
+ * @brief	Handle socket (Input/Output) for client-server communication.
+ */
+
+#include "NetworkConnection.h"
+#include <boost/asio.hpp>
+#include <stdexcept>
+#include <algorithm>
+
+using boost::asio::ip::tcp;
+using boost::asio::io_context;
+
+// ================================
+// NetworkConnection.cpp - Implementation
+// ================================
+/**
  * @file        NetworkConnection.cpp
  * @author      Natanel Maor Fishman
  * @brief       Implementation of network connection management for client-server communication.
@@ -8,16 +25,8 @@
  */
 
 // ================================
-// Usage
+// Namespace Usage
 // ================================
-
-#include "NetworkConnection.h"
-#include <boost/asio.hpp>
-#include <stdexcept>
-#include <algorithm>
-
-using boost::asio::ip::tcp;
-using boost::asio::io_context;
 
 // ================================
 // Constructor and Destructor

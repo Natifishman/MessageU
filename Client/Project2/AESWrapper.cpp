@@ -1,9 +1,8 @@
 /**
  * @file        AESWrapper.cpp
  * @author      Natanel Maor Fishman
- * @brief       AES encryption wrapper providing symmetric encryption capabilities
- * @details     Implements AES-CBC mode encryption/decryption with secure key generation
- *              using RDRAND for cryptographic strength
+ * @brief       Implementation of AES symmetric encryption wrapper.
+ * @details     Provides all cryptographic operations for AES key management, encryption, and decryption.
  * @date        2025
  */
 

@@ -1,9 +1,8 @@
 /**
  * @file        StringUtility.cpp
  * @author      Natanel Maor Fishman
- * @brief       String utility library implementation
- * @details     String utilities for encoding, decoding,
- *              and formatting operations with robust error handling
+ * @brief       Implementation of string utility functions for encoding, decoding, and formatting.
+ * @details     Provides static utility methods for string manipulation, encoding, and time operations.
  * @date        2025
  */
 
