@@ -1,9 +1,9 @@
 /**
- * @author		Natanel Maor Fishman
- * @file		MessageEngine.cpp
+ * @file        MessageEngine.cpp
+ * @author      Natanel Maor Fishman
  * @brief       Client's primary message processing and coordination component.
- * @note        MessageEngine orchestrates communication between the console interface
- *              and backend subsystems including configuration management and network communication layers.
+ * @details     Orchestrates communication between the console interface and backend subsystems including configuration management and network communication layers.
+ * @date        2025
  */
 #include "RSAWrapper.h"
 #include "AESWrapper.h"
@@ -13,8 +13,13 @@
 #include "NetworkConnection.h"
 #include <limits>
 
-
- //Stream operator for MessageType enumeration
+/**
+ * @brief       Stream operator for MessageType enumeration.
+ * @param[out]  os      Output stream.
+ * @param[in]   type    Message type enumeration value.
+ * @return      Reference to the output stream.
+ * @details     Casts enumeration to underlying type for serialization.
+ */
 std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 {
 	// Cast enumeration to underlying type for serialization
@@ -22,7 +27,10 @@ std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 	return os;
 }
 
-//Constructs a new MessageEngine with initialized subsystems
+/**
+ * @brief       Constructs a new MessageEngine with initialized subsystems.
+ * @details     Initializes configuration manager and network connection. Handles allocation failures and resource cleanup.
+ */
 MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullptr), _cryptoEngine(nullptr)
 {
 	try {
@@ -43,10 +51,17 @@ MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullpt
 	}
 }
 
+/**
+ * @brief       Destructor. Cleans up all allocated resources.
+ */
 MessageEngine::~MessageEngine() {
 	cleanup();
 }
 
+/**
+ * @brief       Releases all allocated subsystem resources.
+ * @details     Deletes cryptographic engine, network manager, and config manager in order.
+ */
 void MessageEngine::cleanup() {
 	// Release resources in optimal order
 	if (_cryptoEngine) {
@@ -65,7 +80,11 @@ void MessageEngine::cleanup() {
 	}
 }
 
-// Parses server connection information from configuration file
+/**
+ * @brief       Parses server connection information from configuration file.
+ * @return      true if configuration loaded successfully, false otherwise.
+ * @details     Reads server address and port from SERVER_INFO file and configures network endpoint.
+ */
 bool MessageEngine::loadServerConfiguration()
 {
 	if (!_configManager->openFile(SERVER_INFO))
@@ -105,7 +124,11 @@ bool MessageEngine::loadServerConfiguration()
 	return true;
 }
 
-
+/**
+ * @brief       Loads user credentials from configuration file.
+ * @return      true if credentials loaded successfully, false otherwise.
+ * @details     Reads username, UUID, and private key from CLIENT_INFO file and initializes cryptographic engine.
+ */
 bool MessageEngine::loadUserCredentials()
 {
 	std::string data;
@@ -181,10 +204,10 @@ bool MessageEngine::loadUserCredentials()
 	return true;
 }
 
-
 /**
- * Copy usernames into vector & sort them alphabetically.
- * If m_peerRegistry is empty, an empty vector will be returned.
+ * @brief       Retrieves a sorted vector of all known usernames.
+ * @return      Vector of usernames (alphabetically sorted).
+ * @details     If m_peerRegistry is empty, returns an empty vector.
  */
 std::vector<std::string> MessageEngine::getUsernames() const
 {
@@ -196,7 +219,8 @@ std::vector<std::string> MessageEngine::getUsernames() const
 }
 
 /**
- * Reset m_errorBuffer StringStream: Empty string, clear errors flag and reset formatting.
+ * @brief       Resets m_errorBuffer StringStream.
+ * @details     Empties the string, clears error flags, and resets formatting.
  */
 void MessageEngine::clearLastError()
 {
@@ -207,7 +231,8 @@ void MessageEngine::clearLastError()
 }
 
 /**
- * Store client info to CLIENT_INFO file.
+ * @brief       Stores client info to CLIENT_INFO file.
+ * @return      true if client info stored successfully, false otherwise.
  */
 bool MessageEngine::storeClientInfo()
 {
@@ -249,7 +274,11 @@ bool MessageEngine::storeClientInfo()
 }
 
 /**
- * Validate ResponseHeaderStruct upon an expected ResponseCodeEnum.
+ * @brief       Validates a response header against an expected response code.
+ * @param[in]   header         The response header to validate.
+ * @param[in]   expectedCode   The expected response code.
+ * @return      true if header is valid and matches expected code, false otherwise.
+ * @details     Checks for error codes and validates payload size for known response types.
  */
 bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const ResponseCodeEnum expectedCode)
 {
@@ -302,8 +331,14 @@ bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const Res
 }
 
 /**
- * Receive unknown payload. Payload size is parsed from header.
- * Caller responsible for deleting payload upon success.
+ * @brief       Receives an unknown payload from the server.
+ * @param[in]   request        Pointer to the request buffer.
+ * @param[in]   reqSize        Size of the request buffer.
+ * @param[in]   expectedCode   Expected response code from the server.
+ * @param[out]  payload        Pointer to the received payload (allocated on success, must be deleted by caller).
+ * @param[out]  size           Size of the received payload.
+ * @return      true if payload received successfully, false otherwise.
+ * @details     Handles connection, transmission, and dynamic allocation of payload buffer.
  */
 bool MessageEngine::receiveUnknownPayload(
 	const uint8_t* const request,
@@ -391,7 +426,10 @@ bool MessageEngine::receiveUnknownPayload(
 }
 
 /**
- * Store a client's public key on RAM.
+ * @brief       Stores a client's public key in memory.
+ * @param[in]   clientID   The client ID.
+ * @param[in]   publicKey  The public key to store.
+ * @return      true if the key was stored successfully, false otherwise.
  */
 bool MessageEngine::setClientPublicKey(const ClientIdStruct& clientID, const PublicKeyStruct& publicKey)
 {
@@ -408,7 +446,10 @@ bool MessageEngine::setClientPublicKey(const ClientIdStruct& clientID, const Pub
 }
 
 /**
- * Store a client's symmetric key on RAM.
+ * @brief       Stores a client's symmetric key in memory.
+ * @param[in]   clientID      The client ID.
+ * @param[in]   symmetricKey  The symmetric key to store.
+ * @return      true if the key was stored successfully, false otherwise.
  */
 bool MessageEngine::setClientSymmetricKey(const ClientIdStruct& clientID, const SymmetricKeyStruct& symmetricKey)
 {
@@ -424,10 +465,12 @@ bool MessageEngine::setClientSymmetricKey(const ClientIdStruct& clientID, const 
 	return false;
 }
 
-
 /**
- * Find a client using client ID.
- * Clients list must be retrieved first.
+ * @brief       Finds a client by client ID.
+ * @param[in]   clientID   The client ID to search for.
+ * @param[out]  client     The found client info (if found).
+ * @return      true if client found, false otherwise.
+ * @details     Clients list must be retrieved first.
  */
 bool MessageEngine::findClientById(const ClientIdStruct& clientID, ClientInfo& client) const
 {
@@ -443,8 +486,11 @@ bool MessageEngine::findClientById(const ClientIdStruct& clientID, ClientInfo& c
 }
 
 /**
- * Find a client using username.
- * Clients list must be retrieved first.
+ * @brief       Finds a client by username.
+ * @param[in]   username   The username to search for.
+ * @param[out]  client     The found client info (if found).
+ * @return      true if client found, false otherwise.
+ * @details     Clients list must be retrieved first.
  */
 bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo& client) const
 {
@@ -460,7 +506,10 @@ bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo
 }
 
 /**
- * Register client via the server.
+ * @brief       Registers a client via the server.
+ * @param[in]   username   The username to register.
+ * @return      true if registration succeeded, false otherwise.
+ * @details     Generates a new RSA key pair and sends registration request to the server.
  */
 bool MessageEngine::registerClient(const std::string& username)
 {
@@ -530,7 +579,9 @@ bool MessageEngine::registerClient(const std::string& username)
 }
 
 /**
- * Invoke logic: request client list from server.
+ * @brief       Requests the client list from the server and updates the local registry.
+ * @return      true if the client list was retrieved successfully, false otherwise.
+ * @details     Populates m_peerRegistry with the list of clients from the server.
  */
 bool MessageEngine::requestClientsList()
 {
@@ -583,9 +634,10 @@ bool MessageEngine::requestClientsList()
 	return true;
 }
 
-
 /**
- * Invoke logic: request client public key from server.
+ * @brief       Requests a client's public key from the server.
+ * @param[in]   username   The username whose public key is requested.
+ * @return      true if the public key was retrieved and stored successfully, false otherwise.
  */
 bool MessageEngine::requestClientPublicKey(const std::string& username)
 {
@@ -640,9 +692,11 @@ bool MessageEngine::requestClientPublicKey(const std::string& username)
 	return true;
 }
 
-
 /**
- * Invoke logic: request pending messages from server.
+ * @brief       Retrieves all pending messages from the server.
+ * @param[out]  messages   Vector to store the retrieved messages.
+ * @return      true if messages were retrieved successfully, false otherwise.
+ * @details     Handles decryption and file saving for received messages.
  */
 bool MessageEngine::retrievePendingMessages(std::vector<MessageData>& messages)
 {
@@ -828,8 +882,14 @@ bool MessageEngine::retrievePendingMessages(std::vector<MessageData>& messages)
 	return true;
 }
 
-
-// Send a message to another client via the server.
+/**
+ * @brief       Sends a message to another client via the server.
+ * @param[in]   username   The recipient's username.
+ * @param[in]   type       The type of message to send.
+ * @param[in]   data       The message content or file path.
+ * @return      true if the message was sent successfully, false otherwise.
+ * @details     Handles encryption, key management, and file reading as needed.
+ */
 bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEnum type, const std::string& data)
 {
 	ClientInfo              client; // client to send to
