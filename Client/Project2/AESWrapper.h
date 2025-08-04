@@ -30,13 +30,13 @@
 /**
  * @class       AESWrapper
  * @brief       Advanced AES encryption wrapper for symmetric cryptography
- * @details     Provides a high-level interface for AES-256 encryption and decryption
+ * @details     Provides a high-level interface for AES-128 encryption and decryption
  *              using CBC mode with PKCS7 padding. Features secure key generation
  *              using hardware random number generation (RDRAND) and comprehensive
  *              error handling for cryptographic operations.
  *              
  *              Features:
- *              - AES-256 encryption in CBC mode
+ *              - AES-128 encryption in CBC mode
  *              - Hardware-based random key generation
  *              - String and binary data encryption/decryption
  *              - Protocol-compliant key management
@@ -58,7 +58,7 @@ public:
 
 	/**
 	 * @brief       Default constructor - generates a new random AES key
-	 * @details     Automatically generates a cryptographically secure 256-bit AES key
+	 * @details     Automatically generates a cryptographically secure 128-bit AES key
 	 *              using hardware random number generation for maximum entropy.
 	 *              Initializes all cryptographic components for secure operations.
 	 */

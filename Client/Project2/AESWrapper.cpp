@@ -50,7 +50,7 @@ void AESWrapper::GenerateKey(uint8_t* const keyBuffer, const size_t bufferSize)
 
 /**
  * @brief       Default constructor - generates a new random AES key
- * @details     Automatically generates a cryptographically secure 256-bit AES key
+ * @details     Automatically generates a cryptographically secure 128-bit AES key
  *              using hardware random number generation
  */
 AESWrapper::AESWrapper()
@@ -95,7 +95,7 @@ std::string AESWrapper::encrypt(const std::string& plaintextString) const
  * @return      Encrypted data as binary string
  * @throws      std::invalid_argument if input buffer is invalid
  * @throws      std::runtime_error if encryption operation fails
- * @details     Core encryption method using AES-256 in CBC mode with PKCS7 padding.
+ * @details     Core encryption method using AES-128 in CBC mode with PKCS7 padding.
  *              Currently uses a fixed IV (zero-filled) for demonstration.
  *              Production code must use cryptographically secure random IVs.
  */
@@ -112,7 +112,7 @@ std::string AESWrapper::encrypt(const uint8_t* plaintextData, size_t dataLength)
 		// for each encryption operation and transmit it alongside the ciphertext
 		CryptoPP::byte initializationVector[CryptoPP::AES::BLOCKSIZE] = { 0 };
 
-		// Initialize AES encryption engine with 256-bit key
+		// Initialize AES encryption engine with 128-bit key
 		CryptoPP::AES::Encryption aesEncryptionEngine(_aesKey.symmetricKey,
 			sizeof(_aesKey.symmetricKey));
 
@@ -143,7 +143,7 @@ std::string AESWrapper::encrypt(const uint8_t* plaintextData, size_t dataLength)
  * @return      Decrypted plaintext as string
  * @throws      std::invalid_argument if input buffer is invalid
  * @throws      std::runtime_error if decryption operation fails
- * @details     Core decryption method using AES-256 in CBC mode with PKCS7 unpadding.
+ * @details     Core decryption method using AES-128 in CBC mode with PKCS7 unpadding.
  *              The IV must match the one used during encryption. Currently uses
  *              the same fixed IV as the encryption method.
  */
@@ -160,7 +160,7 @@ std::string AESWrapper::decrypt(const uint8_t* encryptedData, size_t dataLength)
 		// transmitted separately in a secure manner
 		CryptoPP::byte initializationVector[CryptoPP::AES::BLOCKSIZE] = { 0 };
 
-		// Initialize AES decryption engine with 256-bit key
+		// Initialize AES decryption engine with 128-bit key
 		CryptoPP::AES::Decryption aesDecryptionEngine(_aesKey.symmetricKey,
 			sizeof(_aesKey.symmetricKey));
 

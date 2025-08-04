@@ -5,9 +5,9 @@
  * @details     Orchestrates communication between the console interface and backend subsystems including configuration management and network communication layers.
  * @date        2025
  */
-// ================================
-// Includes and Constants
-// ================================
+ // ================================
+ // Includes and Constants
+ // ================================
 #include "RSAWrapper.h"
 #include "AESWrapper.h"
 #include "MessageEngine.h"
@@ -845,7 +845,7 @@ bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const Res
 	if (header.code == RESPONSE_ERROR)
 	{
 		clearLastError();
-		m_errorBuffer << "Server returned error response code";
+		m_errorBuffer << "server responded with an error";
 		return false;
 	}
 
@@ -1064,4 +1064,3 @@ bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo
 	}
 	return false; // client invalid.
 }
-

@@ -220,7 +220,7 @@ private:
 	// Available user commands with complete metadata
 	const std::vector<MenuCommands> _availableCommands{
 		{ MenuCommands::CommandsEnum::CREATE_ACCOUNT,			false, "Register", "Account successfully created."},
-		{ MenuCommands::CommandsEnum::FETCH_USER_LIST,			true,  "Request for client list", ""},
+		{ MenuCommands::CommandsEnum::FETCH_USER_LIST,			true,  "Request for clients list", ""},
 		{ MenuCommands::CommandsEnum::FETCH_PUBLIC_KEY,			true,  "Request for public key", "Public key retrieved successfully."},
 		{ MenuCommands::CommandsEnum::CHECK_INBOX,				true,  "Request for waiting messages", ""},
 		{ MenuCommands::CommandsEnum::COMPOSE_MESSAGE,			true,  "Send a text message", "Message delivered successfully."},
