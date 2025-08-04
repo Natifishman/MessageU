@@ -20,19 +20,25 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AESWrapper.cpp" />
+    <ClCompile Include="ClientRegistry.cpp" />
     <ClCompile Include="ConfigManager.cpp" />
     <ClCompile Include="ConsoleInterface.cpp" />
+    <ClCompile Include="CryptoManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MessageEngine.cpp" />
+    <ClCompile Include="MessageProcessor.cpp" />
     <ClCompile Include="NetworkConnection.cpp" />
     <ClCompile Include="RSAWrapper.cpp" />
     <ClCompile Include="StringUtility.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AESWrapper.h" />
+    <ClInclude Include="ClientRegistry.h" />
     <ClInclude Include="ConfigManager.h" />
     <ClInclude Include="ConsoleInterface.h" />
+    <ClInclude Include="CryptoManager.h" />
     <ClInclude Include="MessageEngine.h" />
+    <ClInclude Include="MessageProcessor.h" />
     <ClInclude Include="NetworkConnection.h" />
     <ClInclude Include="protocol.h" />
     <ClInclude Include="RSAWrapper.h" />

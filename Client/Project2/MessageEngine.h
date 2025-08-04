@@ -18,6 +18,9 @@
 
 // Application includes
 #include "protocol.h"
+#include "CryptoManager.h"
+#include "MessageProcessor.h"
+#include "ClientRegistry.h"
 
 // ================================
 // Constants
@@ -33,7 +36,6 @@ constexpr auto SERVER_INFO = "server.info";
 
 class ConfigManager;
 class NetworkConnection;
-class RSAPrivateWrapper;
 
 /**
  * @class       MessageEngine
@@ -50,32 +52,11 @@ public:
 	// Data Structures
 	// ================================
 
-	/**
-	 * @struct      ClientInfo
-	 * @brief       Complete client information structure
-	 * @details     Contains all necessary information about a client including
-	 *              identification, authentication, and encryption keys.
-	 */
-	struct ClientInfo
-	{
-		ClientIdStruct         id;				///< Unique client identifier
-		std::string            username;		///< Client's display name
-		PublicKeyStruct        publicKey;		///< RSA public key for asymmetric encryption
-		SymmetricKeyStruct     symmetricKey;	///< Session encryption key for symmetric encryption
-		bool publicKeySet =	   false;			///< Flag indicating if public key is available
-		bool symmetricKeySet = false;			///< Flag indicating if symmetric key is available
-	};
+	// Use ClientInfo from ClientRegistry
+	using ClientInfo = ClientRegistry::ClientInfo;
 
-	/**
-	 * @struct      MessageData
-	 * @brief       Message content structure for display
-	 * @details     Contains formatted message data for user interface display.
-	 */
-	struct MessageData
-	{
-		std::string username;   ///< Source username
-		std::string content;    ///< Message content
-	};
+	// Use ProcessedMessage from MessageProcessor
+	using MessageData = MessageProcessor::ProcessedMessage;
 
 public:
 	// ================================
@@ -207,13 +188,14 @@ private:
 	// ================================
 
 	// Component interfaces
-	NetworkConnection* _networkManager; ///< Network communication manager
-	ConfigManager* _configManager;		///< Configuration storage manager
-	RSAPrivateWrapper* _cryptoEngine;   ///< Encryption/decryption engine
+	NetworkConnection* _networkManager;   ///< Network communication manager
+	ConfigManager* _configManager;		  ///< Configuration storage manager
+	CryptoManager* _cryptoManager;		  ///< Cryptographic operations manager
+	MessageProcessor* _messageProcessor;  ///< Message processing component
+	ClientRegistry* _clientRegistry;	  ///< Client information registry
 
 	// Data storage
 	ClientInfo				m_localUser;     ///< Current user's information
-	std::vector<ClientInfo> m_peerRegistry;  ///< Known clients registry
 	std::stringstream		m_errorBuffer;	 ///< Error message buffer
 
 	// ================================
@@ -222,48 +204,11 @@ private:
 
 	// Client Management
 	/**
-	 * @brief       Finds client by ID in registry
-	 * @param[in]   clientID    Client ID to search for
-	 * @param[out]  client      Found client information
-	 * @return      true if client found, false otherwise
-	 * @details     Searches internal registry for client by unique identifier
-	 */
-	bool findClientById(const ClientIdStruct& clientID, ClientInfo& client) const;
-
-	/**
-	 * @brief       Finds client by username in registry
-	 * @param[in]   username    Username to search for
-	 * @param[out]  client      Found client information
-	 * @return      true if client found, false otherwise
-	 * @details     Searches internal registry for client by display name
-	 */
-	bool findClientByUsername(const std::string& username, ClientInfo& client) const;
-
-	/**
 	 * @brief       Stores client information in registry
 	 * @return      true if storage successful, false otherwise
 	 * @details     Updates internal client registry with new information
 	 */
 	bool storeClientInfo();
-
-	// Key Management
-	/**
-	 * @brief       Sets client's public key
-	 * @param[in]   clientID    Target client ID
-	 * @param[in]   publicKey   Public key to store
-	 * @return      true if key set successfully, false otherwise
-	 * @details     Updates client registry with public key for encryption
-	 */
-	bool setClientPublicKey(const ClientIdStruct& clientID, const PublicKeyStruct& publicKey);
-
-	/**
-	 * @brief       Sets client's symmetric key
-	 * @param[in]   clientID    Target client ID
-	 * @param[in]   symmetricKey Symmetric key to store
-	 * @return      true if key set successfully, false otherwise
-	 * @details     Updates client registry with symmetric key for session encryption
-	 */
-	bool setClientSymmetricKey(const ClientIdStruct& clientID, const SymmetricKeyStruct& symmetricKey);
 
 	// Response Handling
 	/**

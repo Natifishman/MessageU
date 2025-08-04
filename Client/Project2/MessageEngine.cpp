@@ -8,12 +8,15 @@
  // ================================
  // Includes and Constants
  // ================================
-#include "RSAWrapper.h"
-#include "AESWrapper.h"
 #include "MessageEngine.h"
 #include "StringUtility.h"
 #include "ConfigManager.h"
 #include "NetworkConnection.h"
+#include "CryptoManager.h"
+#include "MessageProcessor.h"
+#include "ClientRegistry.h"
+#include <map>
+#include <limits>
 #include <limits>
 
 // ================================
@@ -40,12 +43,16 @@ std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
  * @brief       Constructs a new MessageEngine with initialized subsystems.
  * @details     Initializes configuration manager and network connection. Handles allocation failures and resource cleanup.
  */
-MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullptr), _cryptoEngine(nullptr)
+MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullptr), 
+	_cryptoManager(nullptr), _messageProcessor(nullptr), _clientRegistry(nullptr)
 {
 	try {
 		// Allocate core subsystems. Throws std::bad_alloc on failure.
 		_configManager = new ConfigManager();
 		_networkManager = new NetworkConnection();
+		_cryptoManager = new CryptoManager();
+		_clientRegistry = new ClientRegistry();
+		_messageProcessor = new MessageProcessor(_cryptoManager, _configManager);
 	}
 	catch (const std::bad_alloc& e) {
 		// Defensive: Clean up partial state and propagate error
@@ -175,13 +182,7 @@ bool MessageEngine::loadUserCredentials()
 		m_errorBuffer << "No private key found in " << CLIENT_INFO;
 		return false;
 	}
-	try
-	{
-		// Defensive: Always delete previous engine before creating new
-		delete _cryptoEngine;
-		_cryptoEngine = new RSAPrivateWrapper(privateKey);
-	}
-	catch (...)
+	if (!_cryptoManager->loadRSAPrivateKey(privateKey))
 	{
 		clearLastError();
 		m_errorBuffer << "Failed to parse private key from " << CLIENT_INFO;
@@ -222,10 +223,14 @@ bool MessageEngine::registerClient(const std::string& username)
 	}
 
 	// Generate new RSA key pair
-	delete _cryptoEngine;
-	_cryptoEngine = new RSAPrivateWrapper();
-	const auto publicKey = _cryptoEngine->getPublicKey();
+	if (!_cryptoManager->generateRSAKeyPair())
+	{
+		clearLastError();
+		m_errorBuffer << "Failed to generate RSA key pair";
+		return false;
+	}
 
+	const auto publicKey = _cryptoManager->getRSAPublicKey();
 	if (publicKey.size() != PUBLIC_KEY_LENGTH)
 	{
 		clearLastError();
@@ -305,7 +310,7 @@ bool MessageEngine::requestClientsList()
 	}
 
 	ptr = payload;
-	m_peerRegistry.clear();
+	_clientRegistry->clear();
 
 	while (parsedBytes < payloadSize)
 	{
@@ -316,7 +321,8 @@ bool MessageEngine::requestClientsList()
 		// Ensure null termination of client name
 		clientEntry.clientName.name[sizeof(clientEntry.clientName.name) - 1] = '\0';
 
-		m_peerRegistry.push_back({ clientEntry.clientId, reinterpret_cast<char*>(clientEntry.clientName.name) });
+		ClientInfo client(clientEntry.clientId, reinterpret_cast<char*>(clientEntry.clientName.name));
+		_clientRegistry->addClient(client);
 	}
 	delete[] payload;
 	return true;
@@ -341,7 +347,7 @@ bool MessageEngine::requestClientPublicKey(const std::string& username)
 		return false;
 	}
 
-	if (!findClientByUsername(username, client))
+	if (!_clientRegistry->findClientByUsername(username, client))
 	{
 		clearLastError();
 		m_errorBuffer << "User '" << username << "' not found. Please refresh the user list.";
@@ -371,7 +377,7 @@ bool MessageEngine::requestClientPublicKey(const std::string& username)
 	}
 
 	// Store public key
-	if (!setClientPublicKey(response.payload.clientId, response.payload.clientPublicKey))
+	if (!_clientRegistry->setClientPublicKey(response.payload.clientId, response.payload.clientPublicKey))
 	{
 		clearLastError();
 		m_errorBuffer << "Failed to store public key for " << username << ". Please refresh user list.";
@@ -434,135 +440,50 @@ bool MessageEngine::retrievePendingMessages(std::vector<MessageData>& messages)
 		}
 
 		//Resolve username
-		if (findClientById(header->clientId, client))
-		{
-			message.username = client.username;
-		}
-		else
+		if (!_clientRegistry->findClientById(header->clientId, client))
 		{
 			// Handle unknown client ID
-			message.username = "Unknown client: ";
-			message.username.append(StringUtility::hex(header->clientId.uuid, sizeof(header->clientId.uuid)));
+			client.id = header->clientId;
+			client.username = "Unknown client: ";
+			client.username.append(StringUtility::hex(header->clientId.uuid, sizeof(header->clientId.uuid)));
+			client.publicKeySet = false;
+			client.symmetricKeySet = false;
 		}
 
 		ptr += msgHeaderSize;
 		parsedBytes += msgHeaderSize;
 
-		// Process message based on type
-		switch (header->messageType)
-		{
-		case MSG_SYMMETRIC_KEY_REQUEST:
-		{
-			message.content = "Request for symmetric key";
-			messages.push_back(message);
-			break;
-		}
+		// Convert ClientInfo to MessageProcessor::ClientInfo
+		MessageProcessor::ClientInfo processorClient;
+		processorClient.id = client.id;
+		processorClient.username = client.username;
+		processorClient.publicKey = client.publicKey;
+		processorClient.symmetricKey = client.symmetricKey;
+		processorClient.publicKeySet = client.publicKeySet;
+		processorClient.symmetricKeySet = client.symmetricKeySet;
 
-		case MSG_SYMMETRIC_KEY_SEND:
-		{
-			if (header->messageSize == 0)
-			{
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Invalid symmetric key (empty content)" << std::endl;
-				parsedBytes += header->messageSize;
-				ptr += header->messageSize;
-				continue;
-			}
-
-			std::string key;
-			try
-			{
-				key = _cryptoEngine->decrypt(ptr, header->messageSize);
-			}
-			catch (...)
-			{
-
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to decrypt symmetric key" << std::endl;
-				parsedBytes += header->messageSize;
-				ptr += header->messageSize;
-				continue;
-			}
-
-			const size_t keySize = key.size();
-			if (keySize != SYMMETRIC_KEY_LENGTH)  // invalid symmetric key
-			{
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Invalid symmetric key length (" << key.size() << ")" << std::endl;
-			}
-			else
-			{
-				memcpy(client.symmetricKey.symmetricKey, key.c_str(), keySize);
-				if (setClientSymmetricKey(header->clientId, client.symmetricKey))
-				{
-					message.content = "Symmetric key received";
-					messages.push_back(message);
-				}
-				else
-				{
-					m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to store symmetric key for " << message.username << std::endl;
+		// Process message using MessageProcessor
+		std::string errorMessage;
+		MessageData processedMessage = _messageProcessor->processMessage(*header, ptr, processorClient, errorMessage);
+		
+		if (processedMessage.isValid) {
+			// Handle symmetric key storage for MSG_SYMMETRIC_KEY_SEND
+			if (header->messageType == MSG_SYMMETRIC_KEY_SEND) {
+				// MessageProcessor handled the decryption, now we need to store the key
+				std::string key = _cryptoManager->decryptRSA(ptr, header->messageSize);
+				if (!key.empty() && key.size() == SYMMETRIC_KEY_LENGTH) {
+					SymmetricKeyStruct symKey;
+					memcpy(symKey.symmetricKey, key.c_str(), SYMMETRIC_KEY_LENGTH);
+					_clientRegistry->setClientSymmetricKey(header->clientId, symKey);
 				}
 			}
-			parsedBytes += header->messageSize;
-			ptr += header->messageSize;
-			break;
+			messages.push_back(processedMessage);
+		} else if (!errorMessage.empty()) {
+			m_errorBuffer << "\tMessage #" << header->messageId << ": " << errorMessage << std::endl;
 		}
 
-		case MSG_TEXT:
-		case MSG_FILE:
-		{
-			if (header->messageSize == 0)
-			{
-				m_errorBuffer << "\tMessage #" << header->messageId << ": Empty message content" << std::endl;
-				parsedBytes += header->messageSize;
-				ptr += header->messageSize;
-				continue;
-			}
-
-			message.content = "Cannot decrypt message"; // Default error message
-			bool addToQueue = true;
-
-			if (client.symmetricKeySet)
-			{
-				AESWrapper aes(client.symmetricKey);
-				std::string decryptedData;
-
-				try
-				{
-					decryptedData = aes.decrypt(ptr, header->messageSize);
-				}
-				catch (...) {} // Keep default error message
-
-				if (header->messageType == MSG_FILE)
-				{
-					// Set filename with timestamp.
-					std::stringstream filepath;
-					filepath << _configManager->getTemporaryDirectory() << "\\MessageU\\" << message.username << "_" << StringUtility::getTimestamp();
-					message.content = filepath.str();
-
-					if (!_configManager->writeFileComplete(message.content, decryptedData))
-					{
-						m_errorBuffer << "\tMessage #" << header->messageId << ": Failed to save file" << std::endl;
-						addToQueue = false;
-					}
-				}
-				else  // Message text
-				{
-					message.content = decryptedData;
-				}
-			}
-
-			if (addToQueue) {
-				messages.push_back(message);
-			}
-
-			parsedBytes += header->messageSize;
-			ptr += header->messageSize;
-			break;
-		}
-		default:
-		{
-			message.content = ""; // Corrupted message. Don't store.
-			break;
-		}
-		}
+		parsedBytes += header->messageSize;
+		ptr += header->messageSize;
 
 	}
 
@@ -585,7 +506,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 	ResponseMessageSentStruct response;
 	uint8_t* content = nullptr;
 
-	std::map<const MessageTypeEnum, const std::string> messageTypeNames = {
+	static const std::map<MessageTypeEnum, std::string> messageTypeNames = {
 		{MSG_SYMMETRIC_KEY_REQUEST, "symmetric key request"},
 		{MSG_SYMMETRIC_KEY_SEND,    "symmetric key"},
 		{MSG_TEXT,                  "text message"},
@@ -600,7 +521,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		return false;
 	}
 
-	if (!findClientByUsername(username, client))
+	if (!_clientRegistry->findClientByUsername(username, client))
 	{
 		clearLastError();
 		m_errorBuffer << "User '" << username << "' not found. Please refresh the user list.";
@@ -617,21 +538,32 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 			return false;
 		}
 
-		// Generate and store symmetric key
-		AESWrapper    aes;
-		SymmetricKeyStruct symKey;
-		symKey = aes.getKey();
+		// Convert ClientInfo to MessageProcessor::ClientInfo
+		MessageProcessor::ClientInfo processorClient;
+		processorClient.id = client.id;
+		processorClient.username = client.username;
+		processorClient.publicKey = client.publicKey;
+		processorClient.symmetricKey = client.symmetricKey;
+		processorClient.publicKeySet = client.publicKeySet;
+		processorClient.symmetricKeySet = client.symmetricKeySet;
 
-		if (!setClientSymmetricKey(request.payloadHeader.clientId, symKey))
+		// Generate and store symmetric key using MessageProcessor
+		std::string encryptedKey;
+		SymmetricKeyStruct symKey;
+		
+		if (!_messageProcessor->prepareSymmetricKeyMessage(processorClient, encryptedKey, symKey))
+		{
+			clearLastError();
+			m_errorBuffer << "Failed to prepare symmetric key for " << client.username;
+			return false;
+		}
+
+		if (!_clientRegistry->setClientSymmetricKey(request.payloadHeader.clientId, symKey))
 		{
 			clearLastError();
 			m_errorBuffer << "Failed to store symmetric key for " << client.username;
 			return false;
 		}
-
-		// Encrypt symmetric key with recipient's public key
-		RSAPublicWrapper rsa(client.publicKey);
-		const std::string encryptedKey = rsa.encrypt(symKey.symmetricKey, sizeof(symKey.symmetricKey));
 
 
 		// Validate size for transmission
@@ -647,7 +579,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 	}
 	else if (type == MSG_TEXT || type == MSG_FILE)
 	{
-		// Handle text messages and file transfers
+			// Handle text messages and file transfers using MessageProcessor
 		if (data.empty())
 		{
 			clearLastError();
@@ -661,25 +593,26 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 			return false;
 		}
 
-		uint8_t* fileData = nullptr;
-		size_t fileSize = 0;
+		// Convert ClientInfo to MessageProcessor::ClientInfo
+		MessageProcessor::ClientInfo processorClient;
+		processorClient.id = client.id;
+		processorClient.username = client.username;
+		processorClient.publicKey = client.publicKey;
+		processorClient.symmetricKey = client.symmetricKey;
+		processorClient.publicKeySet = client.publicKeySet;
+		processorClient.symmetricKeySet = client.symmetricKeySet;
 
-		// For files, read the content from disk
-		if ((type == MSG_FILE) && !_configManager->readFileComplete(data, fileData, fileSize))
+		std::string encrypted;
+		bool success = (type == MSG_TEXT) 
+			? _messageProcessor->prepareTextMessage(data, processorClient, encrypted)
+			: _messageProcessor->prepareFileMessage(data, processorClient, encrypted);
+
+		if (!success)
 		{
 			clearLastError();
-			m_errorBuffer << "File not found: " << data;
+			m_errorBuffer << ((type == MSG_TEXT) ? "Failed to encrypt message" : "Failed to encrypt file: " + data);
 			return false;
 		}
-
-		// Encrypt content
-		AESWrapper aes(client.symmetricKey);
-		const std::string encrypted = (type == MSG_TEXT)
-			? aes.encrypt(data)
-			: aes.encrypt(fileData, fileSize);
-
-		// Clean up file data if needed
-		delete[] fileData;
 
 
 		// Validate size for transmission
@@ -746,11 +679,7 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 std::vector<std::string> MessageEngine::getUsernames() const
 {
 	// Copy and sort usernames for display
-	std::vector<std::string> usernames(m_peerRegistry.size());
-	std::transform(m_peerRegistry.begin(), m_peerRegistry.end(), usernames.begin(),
-		[](const ClientInfo& client) { return client.username; });
-	std::sort(usernames.begin(), usernames.end());
-	return usernames;
+	return _clientRegistry->getAllUsernames();
 }
 
 /**
@@ -785,7 +714,7 @@ bool MessageEngine::storeClientInfo()
 	}
 
 	// Write private key (Base64 encoded)
-	const auto encodedKey = StringUtility::encodeBase64(_cryptoEngine->getPrivateKey());
+	const auto encodedKey = StringUtility::encodeBase64(_cryptoManager->getRSAPrivateKey());
 	if (!_configManager->writeBytes(reinterpret_cast<const uint8_t*>(encodedKey.c_str()), encodedKey.size()))
 	{
 		clearLastError();
@@ -807,9 +736,17 @@ bool MessageEngine::storeClientInfo()
  */
 void MessageEngine::cleanup() {
 	// Order of deletion is important for dependency safety
-	if (_cryptoEngine) {
-		delete _cryptoEngine;
-		_cryptoEngine = nullptr;
+	if (_messageProcessor) {
+		delete _messageProcessor;
+		_messageProcessor = nullptr;
+	}
+	if (_clientRegistry) {
+		delete _clientRegistry;
+		_clientRegistry = nullptr;
+	}
+	if (_cryptoManager) {
+		delete _cryptoManager;
+		_cryptoManager = nullptr;
 	}
 	if (_networkManager) {
 		delete _networkManager;
@@ -986,82 +923,3 @@ bool MessageEngine::receiveUnknownPayload(
 	return true;
 }
 
-/**
- * @brief       Stores a client's public key in memory.
- * @param[in]   clientID   The client ID.
- * @param[in]   publicKey  The public key to store.
- * @return      true if the key was stored successfully, false otherwise.
- */
-bool MessageEngine::setClientPublicKey(const ClientIdStruct& clientID, const PublicKeyStruct& publicKey)
-{
-	for (ClientInfo& client : m_peerRegistry)
-	{
-		if (client.id == clientID)
-		{
-			client.publicKey = publicKey;
-			client.publicKeySet = true;
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * @brief       Stores a client's symmetric key in memory.
- * @param[in]   clientID      The client ID.
- * @param[in]   symmetricKey  The symmetric key to store.
- * @return      true if the key was stored successfully, false otherwise.
- */
-bool MessageEngine::setClientSymmetricKey(const ClientIdStruct& clientID, const SymmetricKeyStruct& symmetricKey)
-{
-	for (ClientInfo& client : m_peerRegistry)
-	{
-		if (client.id == clientID)
-		{
-			client.symmetricKey = symmetricKey;
-			client.symmetricKeySet = true;
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * @brief       Finds a client by client ID.
- * @param[in]   clientID   The client ID to search for.
- * @param[out]  client     The found client info (if found).
- * @return      true if client found, false otherwise.
- * @details     Clients list must be retrieved first.
- */
-bool MessageEngine::findClientById(const ClientIdStruct& clientID, ClientInfo& client) const
-{
-	for (const ClientInfo& entry : m_peerRegistry)
-	{
-		if (entry.id == clientID)
-		{
-			client = entry;
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * @brief       Finds a client by username.
- * @param[in]   username   The username to search for.
- * @param[out]  client     The found client info (if found).
- * @return      true if client found, false otherwise.
- * @details     Clients list must be retrieved first.
- */
-bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo& client) const
-{
-	for (const ClientInfo& entry : m_peerRegistry)
-	{
-		if (username == entry.username)
-		{
-			client = entry;
-			return true;
-		}
-	}
-	return false; // client invalid.
-}
