@@ -5,6 +5,9 @@
  * @details     Orchestrates communication between the console interface and backend subsystems including configuration management and network communication layers.
  * @date        2025
  */
+// ================================
+// Includes and Constants
+// ================================
 #include "RSAWrapper.h"
 #include "AESWrapper.h"
 #include "MessageEngine.h"
@@ -13,6 +16,9 @@
 #include "NetworkConnection.h"
 #include <limits>
 
+// ================================
+// Stream Operators
+// ================================
 /**
  * @brief       Stream operator for MessageType enumeration.
  * @param[out]  os      Output stream.
@@ -22,11 +28,14 @@
  */
 std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 {
-	// Cast enumeration to underlying type for serialization
+	// Serialize MessageTypeEnum as its underlying integer type for protocol transmission
 	os << static_cast<messageType_t>(type);
 	return os;
 }
 
+// ================================
+// Constructor and Destructor
+// ================================
 /**
  * @brief       Constructs a new MessageEngine with initialized subsystems.
  * @details     Initializes configuration manager and network connection. Handles allocation failures and resource cleanup.
@@ -34,19 +43,15 @@ std::ostream& operator<<(std::ostream& os, const MessageTypeEnum& type)
 MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullptr), _cryptoEngine(nullptr)
 {
 	try {
-		// Initialize subsystem components
+		// Allocate core subsystems. Throws std::bad_alloc on failure.
 		_configManager = new ConfigManager();
 		_networkManager = new NetworkConnection();
 	}
 	catch (const std::bad_alloc& e) {
-		// Handle resource allocation failures
+		// Defensive: Clean up partial state and propagate error
 		clearLastError();
 		m_errorBuffer << "Failed to initialize MessageEngine: " << e.what();
-
-		// Clean up resources to prevent memory leaks
 		cleanup();
-
-		// Propagate the exception
 		throw;
 	}
 }
@@ -55,30 +60,13 @@ MessageEngine::MessageEngine() : _configManager(nullptr), _networkManager(nullpt
  * @brief       Destructor. Cleans up all allocated resources.
  */
 MessageEngine::~MessageEngine() {
+	// Always release all owned resources
 	cleanup();
 }
 
-/**
- * @brief       Releases all allocated subsystem resources.
- * @details     Deletes cryptographic engine, network manager, and config manager in order.
- */
-void MessageEngine::cleanup() {
-	// Release resources in optimal order
-	if (_cryptoEngine) {
-		delete _cryptoEngine;
-		_cryptoEngine = nullptr;
-	}
-
-	if (_networkManager) {
-		delete _networkManager;
-		_networkManager = nullptr;
-	}
-
-	if (_configManager) {
-		delete _configManager;
-		_configManager = nullptr;
-	}
-}
+// ================================
+// Public Interface Methods
+// ================================
 
 /**
  * @brief       Parses server connection information from configuration file.
@@ -87,6 +75,7 @@ void MessageEngine::cleanup() {
  */
 bool MessageEngine::loadServerConfiguration()
 {
+	// Open and parse server info file (address:port)
 	if (!_configManager->openFile(SERVER_INFO))
 	{
 		clearLastError();
@@ -103,7 +92,7 @@ bool MessageEngine::loadServerConfiguration()
 	}
 	_configManager->closeFile();
 
-	// Parse server address and port
+	// Defensive: Validate format (must contain ':')
 	StringUtility::trim(serverData);
 	const auto separatorPos = serverData.find(':');
 	if (separatorPos == std::string::npos)
@@ -115,6 +104,7 @@ bool MessageEngine::loadServerConfiguration()
 	const auto serverAddress = serverData.substr(0, separatorPos);
 	const auto serverPort = serverData.substr(separatorPos + 1);
 
+	// Validate and store endpoint
 	if (!_networkManager->configureEndpoint(serverAddress, serverPort))
 	{
 		clearLastError();
@@ -139,14 +129,13 @@ bool MessageEngine::loadUserCredentials()
 		return false;
 	}
 
-	// Extract username
+	// Username (first line)
 	if (!_configManager->readTextLine(data))
 	{
 		clearLastError();
 		m_errorBuffer << "Failed to read username from " << CLIENT_INFO;
 		return false;
 	}
-
 	StringUtility::trim(data);
 	if (data.length() >= CLIENT_NAME_MAX_LENGTH)
 	{
@@ -156,14 +145,13 @@ bool MessageEngine::loadUserCredentials()
 	}
 	m_localUser.username = data;
 
-	// Extract client UUID
+	// UUID (second line, hex encoded)
 	if (!_configManager->readTextLine(data))
 	{
 		clearLastError();
 		m_errorBuffer << "Failed to read client UUID from " << CLIENT_INFO;
 		return false;
 	}
-
 	data = StringUtility::unhex(data);
 	const char* decodedUuid = data.c_str();
 	if (strlen(decodedUuid) != sizeof(m_localUser.id.uuid))
@@ -175,13 +163,12 @@ bool MessageEngine::loadUserCredentials()
 	}
 	memcpy(m_localUser.id.uuid, decodedUuid, sizeof(m_localUser.id.uuid));
 
-	// Extract private key
+	// Private key (Base64, may span multiple lines)
 	std::string privateKey;
 	while (_configManager->readTextLine(data))
 	{
 		privateKey.append(StringUtility::decodeBase64(data));
 	}
-
 	if (privateKey.empty())
 	{
 		clearLastError();
@@ -190,6 +177,7 @@ bool MessageEngine::loadUserCredentials()
 	}
 	try
 	{
+		// Defensive: Always delete previous engine before creating new
 		delete _cryptoEngine;
 		_cryptoEngine = new RSAPrivateWrapper(privateKey);
 	}
@@ -202,307 +190,6 @@ bool MessageEngine::loadUserCredentials()
 
 	_configManager->closeFile();
 	return true;
-}
-
-/**
- * @brief       Retrieves a sorted vector of all known usernames.
- * @return      Vector of usernames (alphabetically sorted).
- * @details     If m_peerRegistry is empty, returns an empty vector.
- */
-std::vector<std::string> MessageEngine::getUsernames() const
-{
-	std::vector<std::string> usernames(m_peerRegistry.size());
-	std::transform(m_peerRegistry.begin(), m_peerRegistry.end(), usernames.begin(),
-		[](const ClientInfo& client) { return client.username; });
-	std::sort(usernames.begin(), usernames.end());
-	return usernames;
-}
-
-/**
- * @brief       Resets m_errorBuffer StringStream.
- * @details     Empties the string, clears error flags, and resets formatting.
- */
-void MessageEngine::clearLastError()
-{
-	const std::stringstream clean;
-	m_errorBuffer.str("");
-	m_errorBuffer.clear();
-	m_errorBuffer.copyfmt(clean);
-}
-
-/**
- * @brief       Stores client info to CLIENT_INFO file.
- * @return      true if client info stored successfully, false otherwise.
- */
-bool MessageEngine::storeClientInfo()
-{
-	if (!_configManager->openFile(CLIENT_INFO, true))
-	{
-		clearLastError();
-		m_errorBuffer << "Failed to open " << CLIENT_INFO << " for writing";
-		return false;
-	}
-
-	// Write username
-	if (!_configManager->writeTextLine(m_localUser.username))
-	{
-		clearLastError();
-		m_errorBuffer << "Failed to write username to " << CLIENT_INFO;
-		return false;
-	}
-
-	// Write UUID.
-	const auto hexUUID = StringUtility::hex(m_localUser.id.uuid, sizeof(m_localUser.id.uuid));
-	if (!_configManager->writeTextLine(hexUUID))
-	{
-		clearLastError();
-		m_errorBuffer << "Failed to write UUID to " << CLIENT_INFO;
-		return false;
-	}
-
-	// Write private key (Base64 encoded)
-	const auto encodedKey = StringUtility::encodeBase64(_cryptoEngine->getPrivateKey());
-	if (!_configManager->writeBytes(reinterpret_cast<const uint8_t*>(encodedKey.c_str()), encodedKey.size()))
-	{
-		clearLastError();
-		m_errorBuffer << "Failed to write private key to " << CLIENT_INFO;
-		return false;
-	}
-
-	_configManager->closeFile();
-	return true;
-}
-
-/**
- * @brief       Validates a response header against an expected response code.
- * @param[in]   header         The response header to validate.
- * @param[in]   expectedCode   The expected response code.
- * @return      true if header is valid and matches expected code, false otherwise.
- * @details     Checks for error codes and validates payload size for known response types.
- */
-bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const ResponseCodeEnum expectedCode)
-{
-	if (header.code == RESPONSE_ERROR)
-	{
-		clearLastError();
-		m_errorBuffer << "Server returned error response code";
-		return false;
-	}
-
-	if (header.code != expectedCode)
-	{
-		clearLastError();
-		m_errorBuffer << "Unexpected response code: " << header.code << " (expected: " << expectedCode << ")";
-		return false;
-	}
-
-	csize_t expectedSize = DEFAULT_VALUE;
-	switch (header.code)
-	{
-	case RESPONSE_REGISTRATION:
-	{
-		expectedSize = sizeof(ResponseRegistrationStruct) - sizeof(ResponseHeaderStruct);
-		break;
-	}
-	case RESPONSE_PUBLIC_KEY:
-	{
-		expectedSize = sizeof(ResponsePublicKeyStruct) - sizeof(ResponseHeaderStruct);
-		break;
-	}
-	case RESPONSE_MSG_SENT:
-	{
-		expectedSize = sizeof(ResponseMessageSentStruct) - sizeof(ResponseHeaderStruct);
-		break;
-	}
-	default:
-	{
-		return true;
-	}
-	}
-
-	if (header.payloadSize != expectedSize)
-	{
-		clearLastError();
-		m_errorBuffer << "Invalid payload size: " << header.payloadSize << " (expected: " << expectedSize << ")";
-		return false;
-	}
-
-	return true;
-}
-
-/**
- * @brief       Receives an unknown payload from the server.
- * @param[in]   request        Pointer to the request buffer.
- * @param[in]   reqSize        Size of the request buffer.
- * @param[in]   expectedCode   Expected response code from the server.
- * @param[out]  payload        Pointer to the received payload (allocated on success, must be deleted by caller).
- * @param[out]  size           Size of the received payload.
- * @return      true if payload received successfully, false otherwise.
- * @details     Handles connection, transmission, and dynamic allocation of payload buffer.
- */
-bool MessageEngine::receiveUnknownPayload(
-	const uint8_t* const request,
-	const size_t reqSize,
-	const ResponseCodeEnum expectedCode,
-	uint8_t*& payload,
-	size_t& size
-) {
-	ResponseHeaderStruct response;
-	uint8_t buffer[DEFAULT_PACKET_SIZE];
-	payload = nullptr;
-	size = 0;
-
-	if (request == nullptr || reqSize == 0) {
-		clearLastError();
-		m_errorBuffer << "Invalid request parameters";
-		return false;
-	}
-
-	if (!_networkManager->establishConnection()) {
-		clearLastError();
-		m_errorBuffer << "Connection failed: " << _networkManager;
-		return false;
-	}
-
-	if (!_networkManager->sendData(request, reqSize)) {
-		_networkManager->disconnectSocket();
-		clearLastError();
-		m_errorBuffer << "Failed to send request: " << _networkManager;
-		return false;
-	}
-
-	if (!_networkManager->receiveData(buffer, sizeof(buffer))) {
-		clearLastError();
-		m_errorBuffer << "Failed to receive response header: " << _networkManager;
-		return false;
-	}
-
-	memcpy(&response, buffer, sizeof(ResponseHeaderStruct));
-	if (!validateHeader(response, expectedCode)) {
-		clearLastError();
-		m_errorBuffer << "Invalid response from server: " << _networkManager;
-		return false;
-	}
-
-	if (response.payloadSize == 0) {
-		return true;  // No payload, but successful response
-	}
-
-	// Allocate memory for complete payload
-	size = response.payloadSize;
-	payload = new uint8_t[size];
-
-	// Copy initial payload chunk from buffer
-	uint8_t* ptr = static_cast<uint8_t*>(buffer) + sizeof(ResponseHeaderStruct);
-	size_t receivedSize = sizeof(buffer) - sizeof(ResponseHeaderStruct);
-	if (receivedSize > size) {
-		receivedSize = size;
-	}
-	memcpy(payload, ptr, receivedSize);
-
-	// Receive remaining payload if needed
-	ptr = payload + receivedSize;
-	while (receivedSize < size) {
-		size_t bytesToRead = (size - receivedSize);
-		if (bytesToRead > DEFAULT_PACKET_SIZE) {
-			bytesToRead = DEFAULT_PACKET_SIZE;
-		}
-
-		if (!_networkManager->receiveData(buffer, bytesToRead)) {
-			clearLastError();
-			m_errorBuffer << "Failed to receive payload data: " << _networkManager;
-			delete[] payload;
-			payload = nullptr;
-			size = 0;
-			return false;
-		}
-
-		memcpy(ptr, buffer, bytesToRead);
-		receivedSize += bytesToRead;
-		ptr += bytesToRead;
-	}
-
-	return true;
-}
-
-/**
- * @brief       Stores a client's public key in memory.
- * @param[in]   clientID   The client ID.
- * @param[in]   publicKey  The public key to store.
- * @return      true if the key was stored successfully, false otherwise.
- */
-bool MessageEngine::setClientPublicKey(const ClientIdStruct& clientID, const PublicKeyStruct& publicKey)
-{
-	for (ClientInfo& client : m_peerRegistry)
-	{
-		if (client.id == clientID)
-		{
-			client.publicKey = publicKey;
-			client.publicKeySet = true;
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * @brief       Stores a client's symmetric key in memory.
- * @param[in]   clientID      The client ID.
- * @param[in]   symmetricKey  The symmetric key to store.
- * @return      true if the key was stored successfully, false otherwise.
- */
-bool MessageEngine::setClientSymmetricKey(const ClientIdStruct& clientID, const SymmetricKeyStruct& symmetricKey)
-{
-	for (ClientInfo& client : m_peerRegistry)
-	{
-		if (client.id == clientID)
-		{
-			client.symmetricKey = symmetricKey;
-			client.symmetricKeySet = true;
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * @brief       Finds a client by client ID.
- * @param[in]   clientID   The client ID to search for.
- * @param[out]  client     The found client info (if found).
- * @return      true if client found, false otherwise.
- * @details     Clients list must be retrieved first.
- */
-bool MessageEngine::findClientById(const ClientIdStruct& clientID, ClientInfo& client) const
-{
-	for (const ClientInfo& entry : m_peerRegistry)
-	{
-		if (entry.id == clientID)
-		{
-			client = entry;
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * @brief       Finds a client by username.
- * @param[in]   username   The username to search for.
- * @param[out]  client     The found client info (if found).
- * @return      true if client found, false otherwise.
- * @details     Clients list must be retrieved first.
- */
-bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo& client) const
-{
-	for (const ClientInfo& entry : m_peerRegistry)
-	{
-		if (username == entry.username)
-		{
-			client = entry;
-			return true;
-		}
-	}
-	return false; // client invalid.
 }
 
 /**
@@ -1048,5 +735,333 @@ bool MessageEngine::sendMessage(const std::string& username, const MessageTypeEn
 		return false;
 	}
 	return true;
+}
+
+/**
+ * @brief       Retrieves a sorted vector of all known usernames.
+ * @return      Vector of usernames (alphabetically sorted).
+ * @details     If m_peerRegistry is empty, returns an empty vector.
+ */
+std::vector<std::string> MessageEngine::getUsernames() const
+{
+	// Copy and sort usernames for display
+	std::vector<std::string> usernames(m_peerRegistry.size());
+	std::transform(m_peerRegistry.begin(), m_peerRegistry.end(), usernames.begin(),
+		[](const ClientInfo& client) { return client.username; });
+	std::sort(usernames.begin(), usernames.end());
+	return usernames;
+}
+
+/**
+ * @brief       Stores client info to CLIENT_INFO file.
+ * @return      true if client info stored successfully, false otherwise.
+ */
+bool MessageEngine::storeClientInfo()
+{
+	// Open file for writing (overwrite mode)
+	if (!_configManager->openFile(CLIENT_INFO, true))
+	{
+		clearLastError();
+		m_errorBuffer << "Failed to open " << CLIENT_INFO << " for writing";
+		return false;
+	}
+
+	// Write username
+	if (!_configManager->writeTextLine(m_localUser.username))
+	{
+		clearLastError();
+		m_errorBuffer << "Failed to write username to " << CLIENT_INFO;
+		return false;
+	}
+
+	// Write UUID (hex encoded)
+	const auto hexUUID = StringUtility::hex(m_localUser.id.uuid, sizeof(m_localUser.id.uuid));
+	if (!_configManager->writeTextLine(hexUUID))
+	{
+		clearLastError();
+		m_errorBuffer << "Failed to write UUID to " << CLIENT_INFO;
+		return false;
+	}
+
+	// Write private key (Base64 encoded)
+	const auto encodedKey = StringUtility::encodeBase64(_cryptoEngine->getPrivateKey());
+	if (!_configManager->writeBytes(reinterpret_cast<const uint8_t*>(encodedKey.c_str()), encodedKey.size()))
+	{
+		clearLastError();
+		m_errorBuffer << "Failed to write private key to " << CLIENT_INFO;
+		return false;
+	}
+
+	_configManager->closeFile();
+	return true;
+}
+
+// ================================
+// Private and Helper Methods
+// ================================
+
+/**
+ * @brief       Releases all allocated subsystem resources.
+ * @details     Deletes cryptographic engine, network manager, and config manager in order.
+ */
+void MessageEngine::cleanup() {
+	// Order of deletion is important for dependency safety
+	if (_cryptoEngine) {
+		delete _cryptoEngine;
+		_cryptoEngine = nullptr;
+	}
+	if (_networkManager) {
+		delete _networkManager;
+		_networkManager = nullptr;
+	}
+	if (_configManager) {
+		delete _configManager;
+		_configManager = nullptr;
+	}
+}
+
+/**
+ * @brief       Resets m_errorBuffer StringStream.
+ * @details     Empties the string, clears error flags, and resets formatting.
+ */
+void MessageEngine::clearLastError()
+{
+	// Reset error buffer and formatting
+	const std::stringstream clean;
+	m_errorBuffer.str("");
+	m_errorBuffer.clear();
+	m_errorBuffer.copyfmt(clean);
+}
+
+/**
+ * @brief       Validates a response header against an expected response code.
+ * @param[in]   header         The response header to validate.
+ * @param[in]   expectedCode   The expected response code.
+ * @return      true if header is valid and matches expected code, false otherwise.
+ * @details     Checks for error codes and validates payload size for known response types.
+ */
+bool MessageEngine::validateHeader(const ResponseHeaderStruct& header, const ResponseCodeEnum expectedCode)
+{
+	if (header.code == RESPONSE_ERROR)
+	{
+		clearLastError();
+		m_errorBuffer << "Server returned error response code";
+		return false;
+	}
+
+	if (header.code != expectedCode)
+	{
+		clearLastError();
+		m_errorBuffer << "Unexpected response code: " << header.code << " (expected: " << expectedCode << ")";
+		return false;
+	}
+
+	csize_t expectedSize = DEFAULT_VALUE;
+	switch (header.code)
+	{
+	case RESPONSE_REGISTRATION:
+	{
+		expectedSize = sizeof(ResponseRegistrationStruct) - sizeof(ResponseHeaderStruct);
+		break;
+	}
+	case RESPONSE_PUBLIC_KEY:
+	{
+		expectedSize = sizeof(ResponsePublicKeyStruct) - sizeof(ResponseHeaderStruct);
+		break;
+	}
+	case RESPONSE_MSG_SENT:
+	{
+		expectedSize = sizeof(ResponseMessageSentStruct) - sizeof(ResponseHeaderStruct);
+		break;
+	}
+	default:
+	{
+		return true;
+	}
+	}
+
+	if (header.payloadSize != expectedSize)
+	{
+		clearLastError();
+		m_errorBuffer << "Invalid payload size: " << header.payloadSize << " (expected: " << expectedSize << ")";
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * @brief       Receives an unknown payload from the server.
+ * @param[in]   request        Pointer to the request buffer.
+ * @param[in]   reqSize        Size of the request buffer.
+ * @param[in]   expectedCode   Expected response code from the server.
+ * @param[out]  payload        Pointer to the received payload (allocated on success, must be deleted by caller).
+ * @param[out]  size           Size of the received payload.
+ * @return      true if payload received successfully, false otherwise.
+ * @details     Handles connection, transmission, and dynamic allocation of payload buffer.
+ */
+bool MessageEngine::receiveUnknownPayload(
+	const uint8_t* const request,
+	const size_t reqSize,
+	const ResponseCodeEnum expectedCode,
+	uint8_t*& payload,
+	size_t& size
+) {
+	ResponseHeaderStruct response;
+	uint8_t buffer[DEFAULT_PACKET_SIZE];
+	payload = nullptr;
+	size = 0;
+
+	if (request == nullptr || reqSize == 0) {
+		clearLastError();
+		m_errorBuffer << "Invalid request parameters";
+		return false;
+	}
+
+	if (!_networkManager->establishConnection()) {
+		clearLastError();
+		m_errorBuffer << "Connection failed: " << _networkManager;
+		return false;
+	}
+
+	if (!_networkManager->sendData(request, reqSize)) {
+		_networkManager->disconnectSocket();
+		clearLastError();
+		m_errorBuffer << "Failed to send request: " << _networkManager;
+		return false;
+	}
+
+	if (!_networkManager->receiveData(buffer, sizeof(buffer))) {
+		clearLastError();
+		m_errorBuffer << "Failed to receive response header: " << _networkManager;
+		return false;
+	}
+
+	memcpy(&response, buffer, sizeof(ResponseHeaderStruct));
+	if (!validateHeader(response, expectedCode)) {
+		clearLastError();
+		m_errorBuffer << "Invalid response from server: " << _networkManager;
+		return false;
+	}
+
+	if (response.payloadSize == 0) {
+		return true;  // No payload, but successful response
+	}
+
+	// Allocate memory for complete payload
+	size = response.payloadSize;
+	payload = new uint8_t[size];
+
+	// Copy initial payload chunk from buffer
+	uint8_t* ptr = static_cast<uint8_t*>(buffer) + sizeof(ResponseHeaderStruct);
+	size_t receivedSize = sizeof(buffer) - sizeof(ResponseHeaderStruct);
+	if (receivedSize > size) {
+		receivedSize = size;
+	}
+	memcpy(payload, ptr, receivedSize);
+
+	// Receive remaining payload if needed
+	ptr = payload + receivedSize;
+	while (receivedSize < size) {
+		size_t bytesToRead = (size - receivedSize);
+		if (bytesToRead > DEFAULT_PACKET_SIZE) {
+			bytesToRead = DEFAULT_PACKET_SIZE;
+		}
+
+		if (!_networkManager->receiveData(buffer, bytesToRead)) {
+			clearLastError();
+			m_errorBuffer << "Failed to receive payload data: " << _networkManager;
+			delete[] payload;
+			payload = nullptr;
+			size = 0;
+			return false;
+		}
+
+		memcpy(ptr, buffer, bytesToRead);
+		receivedSize += bytesToRead;
+		ptr += bytesToRead;
+	}
+
+	return true;
+}
+
+/**
+ * @brief       Stores a client's public key in memory.
+ * @param[in]   clientID   The client ID.
+ * @param[in]   publicKey  The public key to store.
+ * @return      true if the key was stored successfully, false otherwise.
+ */
+bool MessageEngine::setClientPublicKey(const ClientIdStruct& clientID, const PublicKeyStruct& publicKey)
+{
+	for (ClientInfo& client : m_peerRegistry)
+	{
+		if (client.id == clientID)
+		{
+			client.publicKey = publicKey;
+			client.publicKeySet = true;
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * @brief       Stores a client's symmetric key in memory.
+ * @param[in]   clientID      The client ID.
+ * @param[in]   symmetricKey  The symmetric key to store.
+ * @return      true if the key was stored successfully, false otherwise.
+ */
+bool MessageEngine::setClientSymmetricKey(const ClientIdStruct& clientID, const SymmetricKeyStruct& symmetricKey)
+{
+	for (ClientInfo& client : m_peerRegistry)
+	{
+		if (client.id == clientID)
+		{
+			client.symmetricKey = symmetricKey;
+			client.symmetricKeySet = true;
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * @brief       Finds a client by client ID.
+ * @param[in]   clientID   The client ID to search for.
+ * @param[out]  client     The found client info (if found).
+ * @return      true if client found, false otherwise.
+ * @details     Clients list must be retrieved first.
+ */
+bool MessageEngine::findClientById(const ClientIdStruct& clientID, ClientInfo& client) const
+{
+	for (const ClientInfo& entry : m_peerRegistry)
+	{
+		if (entry.id == clientID)
+		{
+			client = entry;
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * @brief       Finds a client by username.
+ * @param[in]   username   The username to search for.
+ * @param[out]  client     The found client info (if found).
+ * @return      true if client found, false otherwise.
+ * @details     Clients list must be retrieved first.
+ */
+bool MessageEngine::findClientByUsername(const std::string& username, ClientInfo& client) const
+{
+	for (const ClientInfo& entry : m_peerRegistry)
+	{
+		if (username == entry.username)
+		{
+			client = entry;
+			return true;
+		}
+	}
+	return false; // client invalid.
 }
 
