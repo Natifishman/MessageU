@@ -210,12 +210,13 @@ bool MessageEngine::registerClient(const std::string& username)
 		return false;
 	}
 
+	// Validate username contains only printable ASCII characters (space to tilde: 32-126)
 	for (auto ch : username)
 	{
-		if (!std::isalnum(ch))  // check alphanumeric
+		if (ch < 32 || ch > 126)  // check printable ASCII range
 		{
 			clearLastError();
-			m_errorBuffer << "Username must contain only letters and numbers";
+			m_errorBuffer << "Username must contain only printable ASCII characters";
 			return false;
 		}
 	}

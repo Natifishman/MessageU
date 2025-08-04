@@ -232,10 +232,17 @@ class Server:
             return False
 
         try:
-            # Validate username (alphanumeric only)
-            if not request.name.isalnum():
+            # Validate username (ASCII characters, max 254 chars + null terminator)
+            if not request.name or len(request.name) > 254:
                 logging.info(
-                    f"Registration Request: Invalid username format ({request.name})"
+                    f"Registration Request: Invalid username length ({len(request.name) if request.name else 0})"
+                )
+                return False
+            
+            # Check if all characters are printable ASCII (excluding control characters)
+            if not all(32 <= ord(c) <= 126 for c in request.name):
+                logging.info(
+                    f"Registration Request: Username contains non-printable ASCII characters"
                 )
                 return False
 
