@@ -1,5 +1,4 @@
-# MessageU - End-to-End Encrypted Messaging System
-
+![App Showcase](MessageU.png)
 A secure client-server messaging application implementing end-to-end encryption, similar to WhatsApp or Facebook Messenger, developed as part of the Defensive Systems Programming course (20937).
 
 ## 📋 Overview
