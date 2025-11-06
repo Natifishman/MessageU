@@ -38,9 +38,9 @@ class Client:
 
         # Handle name as either string or bytes
         if isinstance(cname, str):
-            self.Name = cname.encode("utf-8")
+            self.UserName = cname.encode("utf-8")
         else:
-            self.Name = cname
+            self.UserName = cname
 
         self.PublicKey = public_key
         self.LastSeen = last_seen
@@ -57,10 +57,10 @@ class Client:
             logging.error(f"Invalid client ID length: {len(self.ID) if self.ID else 0}")
             return False
 
-        # Check Name
-        if not self.Name or len(self.Name) >= protocol.NAME_SIZE:
+        # Check UserName
+        if not self.UserName or len(self.UserName) >= protocol.NAME_SIZE:
             logging.error(
-                f"Invalid client name length: {len(self.Name) if self.Name else 0}"
+                f"Invalid client name length: {len(self.UserName) if self.UserName else 0}"
             )
             return False
 
@@ -150,7 +150,7 @@ class Database:
     CREATE_CLIENTS_TABLE = f"""
         CREATE TABLE IF NOT EXISTS {CLIENTS_TABLE} (
             ID BLOB(16) NOT NULL PRIMARY KEY,
-            Name BLOB(255) NOT NULL,
+            UserName BLOB(255) NOT NULL,
             PublicKey BLOB(160) NOT NULL,
             LastSeen TEXT NOT NULL
         );
@@ -216,7 +216,7 @@ class Database:
                     f"CREATE INDEX IF NOT EXISTS idx_messages_to ON {self.MESSAGES_TABLE}(ToClient);"
                 )
                 conn.executescript(
-                    f"CREATE INDEX IF NOT EXISTS idx_clients_name ON {self.CLIENTS_TABLE}(Name);"
+                    f"CREATE INDEX IF NOT EXISTS idx_clients_name ON {self.CLIENTS_TABLE}(UserName);"
                 )
 
             logging.info("Database initialized successfully")
@@ -243,7 +243,7 @@ class Database:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT COUNT(*) FROM {self.CLIENTS_TABLE} WHERE Name = ?",
+                    f"SELECT COUNT(*) FROM {self.CLIENTS_TABLE} WHERE UserName = ?",
                     (username_bytes,),
                 )
                 count = cursor.fetchone()[0]
@@ -294,7 +294,7 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute(
                     f"INSERT INTO {self.CLIENTS_TABLE} VALUES (?, ?, ?, ?)",
-                    (client.ID, client.Name, client.PublicKey, client.LastSeen),
+                    (client.ID, client.UserName, client.PublicKey, client.LastSeen),
                 )
                 conn.commit()
                 return cursor.rowcount > 0
@@ -388,7 +388,7 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(f"SELECT ID, Name FROM {self.CLIENTS_TABLE}")
+                cursor.execute(f"SELECT ID, UserName FROM {self.CLIENTS_TABLE}")
                 return cursor.fetchall()
         except Exception as e:
             logging.error(f"Error retrieving clients list: {str(e)}")
@@ -455,7 +455,7 @@ class Database:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT ID, Name, PublicKey, LastSeen FROM {self.CLIENTS_TABLE} WHERE ID = ?",
+                    f"SELECT ID, UserName, PublicKey, LastSeen FROM {self.CLIENTS_TABLE} WHERE ID = ?",
                     (client_id,),
                 )
                 result = cursor.fetchone()
